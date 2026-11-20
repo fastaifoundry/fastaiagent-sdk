@@ -191,6 +191,21 @@ verdict for you; a pytest session with no gate options records `passed` with
 `fastaiagent eval export --dry-run` shows `"gate_outcome": null` and marks the run
 *not exportable*.
 
+The CLI and the pytest plugin record the verdict but do not call `connect()`.
+Their runs are sent only when something in the same process connected (the agent
+module or `conftest.py`); otherwise they wait in `local.db` and go with the next
+connected gated run. `fastaiagent eval export --status` shows whether the process
+is connected and how many runs are waiting. `eval export` itself never sends.
+
+**A run a scripted model answered is never sent** (*since 1.104.0*). If a
+`TestModel` or `FunctionModel` answered or judged any case, `evaluate()` and the
+pytest plugin store `scripted_models: true` in the run's local metadata, the run is
+written `synced = 1`, and `record_gate_result()` logs a warning when connected. Its
+verdict scores what the test scripted, and on the plane it would read as evidence
+about the agent. This came from a coding-assistant test: with no model key the
+assistant scripted the answers, scored 100%, and recorded a passing verdict on the
+plane. The key stays in `local.db`; nothing new goes on the wire.
+
 *Changed in 1.89.0.* Before, a run waiting for its verdict was sent with an
 invented `passed` whenever any span flush drained the outbox, and the plane keeps
 the first copy of a `run_id`, so the real verdict arriving later was discarded. A

@@ -72,7 +72,7 @@ agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-4o"))
 #                                    ^ no guardrails=[...] defined locally
 agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 # -> GuardrailBlockedError(guardrail_name="block-ssn-output")
-#    from fastaiagent._internal.errors import GuardrailBlockedError
+#    from fastaiagent import GuardrailBlockedError
 ```
 
 - **No new check engine.** A rule is mapped onto the SDK's own
@@ -98,6 +98,20 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 - **Scoping.** A rule attached to specific agents applies only to them; an
   unattached rule is domain-wide. Built guardrails are memoized by policy
   `version`, so an edit on the plane is picked up on the next pull.
+- **An agent's first run.** Rules attached to agents, and approval policies on
+  tools, are matched by the plane's agent id, which an agent gets when it
+  registers. A connected agent registers on its first run, in the background.
+  *Since 1.104.0* that run waits for its own registration, up to 5 seconds,
+  whenever the policy has a rule attached to agents or an approval policy on one
+  of its tools; with only domain-wide rules it does not wait. Before, over a slow
+  link the first run could skip both without a word. If registration takes
+  longer, the run goes on and a warning says what it did not apply.
+  `agent.push()` after `connect()` registers the agent up front.
+- **Check what arrived.** `fa.plane_guardrails_for_agent(agent.agent_id)` lists
+  the plane rules the next run will enforce. An empty list can also mean the
+  policy pull failed, which `connect()` and `fa.refresh_policy()` log as a
+  warning (*since 1.104.0*; it was a debug line) while keeping the last policy.
+  Do not read an empty list as "nothing to enforce".
 - **Refresh.** `fa.refresh_policy()` re-pulls the policy mid-session to pick up a
   guardrail authored *after* `connect()`.
 - **Local-only is unchanged.** With no connection there is no policy cache, so a
@@ -152,7 +166,9 @@ agent = Agent(
 - **`agent_id`** is the agent's **platform UUID** — it's sent to `/policy/decide`
   so the plane can match approval policies (and it validates the id). Without it,
   the agent isn't enrolled and the gate is a no-op. `agent.push()` registers the
-  agent and sets it for you. An enrolled agent stays governed inside a `Swarm` or
+  agent and sets it for you; so does a connected agent's first run, which since
+  1.104.0 waits (up to 5 s) for that registration when one of its tools is under
+  an approval policy, so the first call is gated too. An enrolled agent stays governed inside a `Swarm` or
   a `Supervisor` (before 1.74.0 their internal copies dropped the id, so a
   worker's policy-gated tool ran with no approval at all). The same holds for a
   member that **auto-registers** on its first run inside a team, the usual case

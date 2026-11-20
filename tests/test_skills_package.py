@@ -239,6 +239,25 @@ def test_check_imports_script_flags_removed_and_invented_names(tmp_path: Path) -
     assert ok.returncode == 0, ok.stdout + ok.stderr
 
 
+def test_check_imports_script_points_private_imports_at_the_public_name(tmp_path: Path) -> None:
+    """An assistant copied ``from fastaiagent._internal.errors import GuardrailBlockedError``
+    (once the only way) after it became public in 1.104.0. A name that is not exported
+    publicly (``MaxIterationsError``) has no better import, so it is not flagged."""
+    src = tmp_path / "private.py"
+    src.write_text(
+        "from fastaiagent._internal.errors import GuardrailBlockedError, MaxIterationsError\n",
+        encoding="utf-8",
+    )
+    script = SKILLS_ROOT / "fastaiagent-sdk" / "scripts" / "check_imports.py"
+    proc = subprocess.run(
+        [sys.executable, "-I", str(script), str(src)], capture_output=True, text=True
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr  # a warning, not an error
+    assert "import GuardrailBlockedError from fastaiagent" in proc.stdout
+    assert "MaxIterationsError" not in proc.stdout
+    assert "1 warning(s)" in proc.stdout
+
+
 def test_skills_are_in_the_built_wheel(tmp_path: Path) -> None:
     """Hatch ships everything under fastaiagent/, but check it: a skill missing from the
     wheel is invisible to ``fastaiagent skills install`` and nothing else notices."""

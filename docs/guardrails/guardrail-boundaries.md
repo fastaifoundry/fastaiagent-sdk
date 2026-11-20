@@ -64,7 +64,7 @@ Several rules at one gate are not a set; they are a sequence and then a group. T
 
 The rules:
 
-- **Blocking rules run first, sequentially, fail-fast.** The first one whose action halts raises `GuardrailBlockedError` (`from fastaiagent._internal.errors import GuardrailBlockedError`); nothing after it runs, observers included.
+- **Blocking rules run first, sequentially, fail-fast.** The first one whose action halts raises `GuardrailBlockedError` (`from fastaiagent import GuardrailBlockedError`); nothing after it runs, observers included.
 - **Observers run after, in parallel**, on the payload as the blocking rules left it. An observer's failure is recorded with `action_taken="blocked"`; one that raises is recorded as `errored=True, passed=False`. Neither stops the run. "Does not stop the run" and "passes the payload" are different claims, and only the first is true.
 - **Every firing lands on `AgentResult.guardrails`**, name, position, passed, errored and what it did, so a `warn` or an observer's failure is visible with no UI and no plane.
 - **A tool call fires `tool_call` before the tool and `tool_result` after it**, for every call in the loop; `input` fires once before the model and `output` once on the answer.

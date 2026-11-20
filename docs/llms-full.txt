@@ -1,6 +1,6 @@
 # FastAIAgent SDK — full reference for coding assistants
 
-> Use when writing, changing, testing or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
+> Use when writing, changing, testing, evaluating or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform, including evaluating an agent against a platform dataset and enforcing guardrails authored on the platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
 
 This page is the `fastaiagent-sdk` skill: the main page, then one reference per area. The `fastaiagent-studio` skill follows it (building an agent through Agent Studio, needs a platform). Install both into a project with `fastaiagent skills install`.
 
@@ -40,7 +40,8 @@ Each is a mistake assistants make today.
    tool and reusing its recorded output; the SDK's own `rerun()` blocks tools you did not supply
    or allow (`references/tools.md`).
 7. **Never put a key in code.** Read `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `FASTAIAGENT_API_KEY`
-   and the rest from the environment. Never print or log one.
+   and the rest from the environment. Never print or log one. If a key is not in the environment,
+   ask the user how to load it; do not search their home directory or other projects for one.
 8. **Write an offline test next to every agent** with `fastaiagent.testing.TestModel`
    (see `references/testing.md`). A test that needs a live model key is marked and skipped
    without one.
@@ -49,7 +50,8 @@ Each is a mistake assistants make today.
 10. **Check, then run the real thing.** Run this skill's `scripts/check_imports.py <your files>`
     with the project's own interpreter (for example `.venv/bin/python
     .agents/skills/fastaiagent-sdk/scripts/check_imports.py desk/agent.py`); it works from the
-    project root. It resolves every `fastaiagent` import and attribute against the installed SDK
+    project root. Use that interpreter for every command, not a bare `python`, which can be a
+    different Python without the SDK; never report "not installed" from a bare `python`. It resolves every `fastaiagent` import and attribute against the installed SDK
     and flags removed names. Then run your offline test. Then, if the user's model key is in the
     environment, run the real entry point once and read what it prints. Offline tests use scripted
     models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
@@ -65,7 +67,9 @@ Each is a mistake assistants make today.
 | More than one agent: `Supervisor` + `Worker`, `Swarm`, `Chain` | `references/teams.md` |
 | Safety checks on input, output or tool calls | `references/guardrails.md` |
 | Measuring quality: `evaluate`, scorers, the pytest plugin, gates | `references/evals.md` |
-| Connecting to a platform, prompts, traces, push, the runner, the CLI | `references/platform.md` |
+| Connecting to a platform: what it supplies (guardrail rules, prompts, datasets, judges, knowledge bases) and receives (traces, eval verdicts), the connected-agent checklist, push, the runner, the CLI | `references/platform.md` |
+| Guardrails authored on the platform | `references/guardrails.md`, "Plane-authored rules" |
+| Eval datasets, judges and verdicts on the platform | `references/evals.md`, "With a platform" |
 | Testing without a model | `references/testing.md` |
 | Old code or old advice that no longer works | `references/changed.md` |
 
@@ -147,8 +151,8 @@ if __name__ == "__main__":
     main(sys.argv[1])
 ```
 
-Build what was asked. Do not add tools, fake data, aliases or helper layers the user did not ask
-for; say what you would add and let them decide. When a choice has a cost the user should hear
+Build what was asked. Do not add tools, fake data, aliases, command-line flags or helper layers the
+user did not ask for; say what you would add and let them decide. When a choice has a cost the user should hear
 (for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
 guardrail is coarse), say it in your summary.
 
@@ -450,6 +454,12 @@ def test_the_real_mcp_tool_is_found_and_called():
     assert result.error is None
     assert "94105" in result.output
 ```
+
+**Test the transport the app uses.** The test above proves stdio. An app that connects with
+`server_url=` (streamable HTTP) takes a different path that this test never runs. Either test that
+path too (start the same server with `mcp.run(transport="streamable-http")` in an `e2e`-marked test
+and connect by URL), or say in your summary that the HTTP path is untested. Then run the app once
+against the real server, as `SKILL.md` rule 10 asks.
 
 ## Deferred tools
 
@@ -978,7 +988,7 @@ fastaiagent.Agent(name, system_prompt=, llm=, tools=, guardrails=, memory=, conf
 
 - `name` is the only required parameter. There is no `model=`, `instructions=`, `max_iterations=` or `temperature=` on `Agent`. Put the model on `llm=LLMClient(...)` and the loop knobs on `config=AgentConfig(...)`. Passing an unknown keyword raises `TypeError`.
 - `system_prompt` takes a `str`, a registry `Prompt`, or a callable `(RunContext | None) -> str` (dynamic instructions, below).
-- `llm` must be an `LLMClient` (or `TestModel`/`FunctionModel`). A raw `openai.OpenAI` client raises `TypeError`; wrap it with `LLMClient(openai_client=...)`. Omitting `llm` silently builds `LLMClient()`, which is OpenAI `gpt-4o-mini` and needs `OPENAI_API_KEY`.
+- `llm` must be an `LLMClient` (or `TestModel`/`FunctionModel`). A raw `openai.OpenAI` client raises `TypeError`; wrap it with `LLMClient(openai_client=...)`. Omitting `llm` silently builds `LLMClient()`, which is OpenAI `gpt-4o-mini` and needs `OPENAI_API_KEY`. That default is old: pick a current model yourself (for example `gpt-5-mini`) unless the user named one, and do not change a model id the user gave you or one that already runs (`SKILL.md` rule 10).
 - `tools=` takes `Tool` objects (`FunctionTool`, `RESTTool`, `MCPTool`...), not bare functions. A plain `def` in the list fails; wrap it with `@tool` or `FunctionTool` (see `tools.md`).
 - `checkpointer=` (for example `SQLiteCheckpointer`) enables `resume`/`fork` and pausing via `interrupt()`.
 
@@ -1285,7 +1295,7 @@ fastaiagent.Guardrail.aexecute(data)
 - Attach with `Agent(..., guardrails=[...])`. A `Supervisor` takes its own `guardrails=` too (see `teams.md`).
 - `fn(text)` returns a `bool` or a `GuardrailResult(passed, score=, message=, metadata=)`. A dict payload is passed to `fn` as JSON text.
 - `execute` is sync. Inside async code use `await guardrail.aexecute(...)`.
-- A blocking failure raises `GuardrailBlockedError` out of `agent.run()`. Import it from `fastaiagent._internal.errors` (it has `.guardrail_name` and `.results`); it is not exported at the top level.
+- A blocking failure raises `GuardrailBlockedError` out of `agent.run()`. Import it with `from fastaiagent import GuardrailBlockedError` (it has `.guardrail_name`, `.results` and `.trace_id`, the blocked run's trace, `None` when tracing is off). Code written for 1.103.0 or earlier imports it from `fastaiagent._internal.errors`, which still works.
 
 ## Built-in factories
 
@@ -1327,8 +1337,7 @@ fastaiagent.guardrail.responsible_ai(pii=, prompt_injection=, secrets=, toxicity
 `mode="keyword"` is a word match: it needs no model, and it passes any text that contains a listed word ("tell me a joke about my order" passes an order-topics whitelist). Use it for offline tests or a coarse first line, and tell the user so; use `mode="llm"` when the meaning matters. A blocked run raises `GuardrailBlockedError` to the caller; an application should catch it and answer the person, not crash.
 
 ```python
-from fastaiagent import Agent
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import Agent, GuardrailBlockedError
 from fastaiagent.guardrail import banned_topics, json_valid, no_pii, no_secrets
 from fastaiagent.testing import TestModel
 
@@ -1347,8 +1356,7 @@ except GuardrailBlockedError as err:
 A tool-call gate runs before the tool executes (the tool never runs on a block):
 
 ```python
-from fastaiagent import Agent, FunctionTool
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import Agent, FunctionTool, GuardrailBlockedError
 from fastaiagent.guardrail import allowed_domains
 from fastaiagent.testing import FunctionModel
 
@@ -1479,6 +1487,56 @@ Do wrap the run in `with fa.guardrail_context(...)`. Don't rely on it being set:
 
 - The SDK executes: every type above runs in-process. A connected agent also turns plane-authored rules (`regex`, `schema`, `classifier`, `llm_judge`, `content_safety`, `groundedness`, `topic`, `pii`, `secrets`) into `Guardrail(origin="plane")` at all four positions; a plane `code` rule is skipped because its logic is not distributable.
 - Plane-authored rules are enforced alongside local ones. `floor` and draft/publish governance are plane concepts; locally `floor` is only displayed.
+
+### Plane-authored rules on a connected agent
+
+You do not fetch them or pass them in. `connect()` pulls the policy once, and every run adds the
+rules that apply to that agent to its own `guardrails=[...]`. What you write is the check that they
+arrived:
+
+```python
+# needs: a connected plane with at least one active guardrail rule
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, GuardrailBlockedError, LLMClient
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    agent.push()  # registers it now, so its id is known before you list its rules
+    plane_rules = fa.plane_guardrails_for_agent(agent.agent_id)
+    print([(g.name, g.position.value) for g in plane_rules])
+    try:
+        agent.run("an input one of those rules should block")
+    except GuardrailBlockedError as err:
+        print("blocked by", err.guardrail_name, "trace", err.trace_id)  # read this trace back
+finally:
+    fa.disconnect()
+```
+
+- **When they change.** The policy is not re-pulled by itself. A rule authored or edited after
+  `connect()` applies after `fa.refresh_policy()`; the next run rebuilds the list.
+- **Which ones apply.** A rule with no agents attached is domain-wide. A rule attached to agents
+  applies to those plane agent ids only. `plane_guardrails_for_agent` takes the id, or the name of
+  an agent this process has pushed. An agent gets its id when it registers, which a connected
+  agent does on its first run; that run waits for it (up to 5 s) when rules are attached to agents.
+  If registration takes longer, a warning says the attached rules were not applied to that run.
+  The plane identifies an agent by name, so a new agent that reuses an existing name in the
+  domain gets that agent's rules: pick a name that is not taken.
+- **An empty list is not a pass.** It means none apply, the rule was authored after `connect()`,
+  it is a `code` rule (skipped), or the policy pull failed. A failed pull is logged as a warning
+  and keeps the last policy, so read the log and say what you saw; do not say the rules are
+  enforced.
+- **Do not copy them into code.** Do not rebuild a plane rule locally or pass the result of
+  `plane_guardrails_for_agent` into `guardrails=[...]`. Plane rules are never pushed back with the
+  agent's definition.
+- **Testing.** An offline test with `TestModel` sees no plane rules, and a test that passes a local
+  guardrail (`no_pii()`, a regex) in their place tests that guardrail, not the plane's. Put the
+  test that proves a plane rule fires in `tests/e2e/`, marked `e2e`, skipped when
+  `FASTAIAGENT_TARGET` is not set, and do not add a `guardrails=` parameter only to fake it.
+- **Evidence.** Each check is a guardrail span on the run's trace, which reaches the plane with the
+  trace. The plane's own guardrail views are read in the console, not through the SDK.
 - SDK-only: `action="reask"`, `guardrail_context`, `timeout_seconds` and the regex ReDoS bound, and `code` rules via `fn=`.
 - Traces: local capture is full fidelity. Guardrail span detail leaving the process is an allowlist per type; setting `FASTAIAGENT_TRACE_PAYLOADS=0` stops payload-bearing attributes from being exported.
 - Test offline with `TestModel` / `FunctionModel` (see `teams.md`); keep tests of model-backed judges in `tests/e2e/` marked `e2e`.
@@ -1701,6 +1759,67 @@ fastaiagent eval compare main pr --tolerance 0.02
 
 `eval compare` exits `1` on a pass-rate drop beyond `--tolerance` and `3` when a run is not found.
 
+## With a platform
+
+Evals always run in your process, with your model keys. A connected plane can supply datasets and
+judge configurations and receives the verdicts.
+
+| What | How |
+|---|---|
+| Pull a dataset | `Dataset.from_platform(name)`, then pass it to `evaluate` |
+| Push a dataset | `Dataset([...]).publish(name)` |
+| Pull a judge | `Scorer.from_platform(name)` returns an `LLMJudge` (criteria, prompt template, scale); it runs locally. An unknown name raises `PlatformNotFoundError`. |
+| Send a verdict | A **gated** run only (below) |
+| Run an eval the plane asks for | `fastaiagent runner` executes the plane's `eval_run` jobs in your process (`platform.md`); for an agent built in Agent Studio, `fastaiagent studio eval` (the `fastaiagent-studio` skill) |
+
+**A run is sent only once its gate verdict is recorded.** `evaluate()` followed by `gate()` sends
+nothing: the run waits in `local.db`. The `fastaiagent eval run` CLI and the pytest plugin record
+the verdict for you. In Python, record it yourself:
+
+```python
+# needs: a connected plane; the API key needs the eval:execute scope
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, Dataset, LLMClient
+from fastaiagent.eval import evaluate, gate, record_gate_result
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    results = evaluate(agent.run, Dataset.from_platform("support-regression"), scorers=["contains"])
+    report = gate(results, fail_under=["contains.pass_rate=0.9"], max_error_rate=0.1)
+    record_gate_result(
+        results.run_id, gate_outcome=report.outcome, thresholds={"contains.pass_rate": 0.9}
+    )
+    print(report.outcome, results.run_id)
+finally:
+    fa.disconnect()  # also sends the queued verdict
+```
+
+- **Only real runs are sent.** The plane counts a recorded verdict as evidence about the agent, and
+  a run that `TestModel` or `FunctionModel` answered or judged scores what you scripted. The SDK
+  keeps such a run local: `evaluate()` and the pytest plugin mark it (`scripted_models` in the run's
+  local metadata), it is never queued, and `record_gate_result()` logs a warning when connected. Do
+  not work around that. With no model key, stop and say the eval could not run; a scripted run
+  is not a substitute.
+- Only metadata leaves: aggregates, the verdict, thresholds, git provenance and per-case scorer
+  verdicts with their `trace_id`. Inputs and outputs never do; the plane joins them from traces.
+- The key needs the `eval:execute` scope, which is not a default. Without it (or without the
+  domain's `connected_state_plane` entitlement) the plane answers 403, the SDK warns once and the
+  run stays queued. `connect(export_evals=False)` or `FASTAIAGENT_EXPORT_EVALS=0` keeps every run
+  local, and the plane cannot override that.
+- The CLI and pytest plugin do not call `connect()`. Their verdicts are sent only when something in
+  the same process connected (for example the agent module or `conftest.py`). Otherwise they wait
+  in `local.db` and go with the next connected gated run.
+- Check before claiming: after `disconnect()`, `fastaiagent eval export --status` shows how many runs
+  are still waiting. A run leaves that count only when the plane has confirmed it, so 0 means it
+  arrived. `--dry-run` prints the exact payload and names runs that have no verdict yet. The plane's
+  API has no read for these runs (`/public/v1/evals/runs/{id}` serves only runs the plane ran
+  itself), so point the user to the console to see them.
+- `EvalResults.publish(run_name)` is an older call that posts scores without a verdict. Use the
+  gated path above for evidence the plane counts.
+
 ---
 
 # Platform connection, prompts, tracing, push, runner, CLI
@@ -1748,6 +1867,72 @@ fa.disconnect()  # flushes pending spans first
 - `governance_fail_mode="closed"` (or `FASTAIAGENT_GOVERNANCE_FAIL_MODE=closed`): a governed agent refuses tool calls when the policy cannot be confirmed. Default `"open"`. Any other value logs a warning and stays open.
 - `fa.is_connected` is a lazy module attribute (bool), not a function.
 - `fa.refresh_policy()` re-pulls the plane policy (returns its version, or `None` when not connected).
+
+## What a connected agent gets from the plane, and what it sends
+
+The plane authors, stores and monitors; the SDK runs everything in your process. Nothing below
+lets the plane stop a run from outside it.
+
+| From the plane | How | Notes |
+|---|---|---|
+| Guardrail rules | Pulled with the policy at `connect()`; applied on every run with no code | Not re-pulled by itself: a rule authored after `connect()` applies after `fa.refresh_policy()`. Details in `guardrails.md`. |
+| Approval policies (governance) | Same policy pull | Gate governed tool calls; see `governance_fail_mode` above. |
+| Prompts | `PromptRegistry().get(slug)` | See Prompts below. |
+| Eval datasets | `Dataset.from_platform(name)` | `Dataset.publish(name)` sends one up. |
+| LLM-judge scorers | `Scorer.from_platform(name)` | Returns an `LLMJudge`. Unknown name: `PlatformNotFoundError`. |
+| Knowledge-base search | `PlatformKB(kb_id, name=, description=)` | Retrieval runs on the plane; the key needs `kb:read`. |
+| Curated memory facts | `PlaneFactBlock` in `fastaiagent.agent.memory_blocks` | Read-only, approved facts. |
+
+| To the plane | When | Notes |
+|---|---|---|
+| Traces, including guardrail spans | In the background while connected | `disconnect()` flushes; `export_traces=False` turns it off. |
+| Agent definitions | Auto-registered on the first run, or `agent.push()` | Local guardrails only; plane rules are never echoed back. |
+| Eval verdicts | Only gated runs (see `evals.md`) | Metadata only, never inputs or outputs. The key needs `eval:execute`. |
+| Datasets, prompts | `Dataset.publish(name)`, `PromptRegistry().publish(...)` | Explicit calls only. |
+
+SDK only, never from the plane: `code` guardrails (`fn=`), `action="reask"`, `guardrail_context`,
+`timeout_seconds`. Authoring guardrails, scorers and datasets happens in the console or the plane's
+API, not in the SDK.
+
+```signature
+fastaiagent.plane_guardrails_for_agent(agent_id)
+fastaiagent.Dataset.from_platform(name)
+fastaiagent.Dataset.publish(name)
+fastaiagent.Scorer.from_platform(name)
+fastaiagent.PlatformKB(kb_id, name=, description=)
+```
+
+## Connected-agent checklist
+
+Run through this before you say a connected app works. Each step names what proves it.
+
+1. **Key and address from the environment.** `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`; never
+   in code, never printed.
+2. **`connect()` in the entry point, `disconnect()` in a `finally`** (`SKILL.md` has the
+   `main.py`). `connect()` returning does not prove the plane answered: an unreachable plane only
+   logs a warning. A 401 or 403 raises `PlatformAuthError`.
+3. **Plane guardrails reached this agent.** Print
+   `[g.name for g in fa.plane_guardrails_for_agent(agent.agent_id or agent.name)]`. An empty list
+   means one of: none authored; authored after `connect()` (call `fa.refresh_policy()`); scoped to
+   another agent; a `code` rule (skipped); or the policy pull failed, which `connect()` and
+   `refresh_policy()` log as a warning. Do not report "guardrails are enforced" from an empty list.
+4. **Rules scoped to one agent.** Rules attached to agents, and approval policies on tools, are
+   matched by the plane's agent id. A connected agent registers on its first run, and that run
+   waits up to 5 s for its id when the policy needs it. A warning means it waited longer and
+   that run went without them. `agent.push()` after `connect()` registers it up front.
+5. **A rule actually fires.** Send one input it should catch and expect `GuardrailBlockedError`
+   (or the masked or warned output for `mask` and `warn`). Take that input from the rule (its
+   `config`, printed with its name) or ask the user for one; do not generate candidates by
+   searching the pattern. A test that proves it names that input. Then read the trace back.
+6. **Traces arrived.** `GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header
+   returns 200, after `disconnect()` has flushed. A finished run gives `result.trace_id`; a
+   blocked one raises, and its id is `err.trace_id` on the `GuardrailBlockedError`.
+7. **Eval verdicts arrived.** Only gated runs against a real model are sent (`evals.md`, "With a
+   platform"); a run a scripted model answered stays local, by design. After
+   `disconnect()`, `fastaiagent eval export --status` showing 0 runs waiting means the plane
+   confirmed them; `--dry-run` shows what would leave and whether a run is exportable.
+8. **Say what you checked.** Name each step you ran and what it printed, and each one you could
+   not run (no plane, no rule authored, key without `eval:execute`).
 
 ## Credentials resolution
 
@@ -1835,6 +2020,7 @@ print(result.trace_id, len(store.list_traces(last_hours=1)))
 
 - `trace_context` is a context manager yielding an OTel span; nested use nests spans. It needs no connection.
 - `list_traces(last_hours=24, limit=100)` defaults hide older traces: pass `last_hours=None` for all time. An unknown keyword only warns (`UserWarning`) and is ignored.
+- Tracing is on by default; there is nothing to turn on. Do not set `FASTAIAGENT_TRACE_ENABLED=1` in code or docs.
 - `FASTAIAGENT_TRACE_ENABLED=0` is the master switch: no local capture and no export at all (Replay and the UI then have nothing).
 - `FASTAIAGENT_TRACE_PAYLOADS=0` keeps prompts, outputs and tool arguments local: they are stripped before spans reach the plane or any `add_exporter` target. It does not reduce what `local.db` holds. An unparseable value counts as off (fails closed).
 - `add_exporter(exporter)` adds any OTel `SpanExporter` (Jaeger, Datadog, ...); it is wrapped so payloads are filtered per the settings above.
@@ -1926,7 +2112,7 @@ teaches the loop, the spec and the errors; read that skill, not this paragraph, 
 
 # The `fastaiagent-studio` skill
 
-> Use when the person wants an agent built, tried and evaluated through FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team and test it", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, run trials and evals in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. For writing fastaiagent code yourself, use the fastaiagent-sdk skill instead.
+> Use only when the person wants a NEW agent built, or an agent Studio made changed, inside FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team in Studio", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, try it in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. Not for an agent whose code is in this project, and not for evaluating against a platform dataset, using platform guardrails or connecting an app to the platform: those are the fastaiagent-sdk skill.
 
 # Agent Studio, from the command line
 
@@ -1936,6 +2122,11 @@ command line **you are the planner**. Studio's own model is never called: you de
 with your model and send the design as a **spec**. Studio checks it and does the rest.
 
 After the export the code is the person's. Studio assists; it is not where agents live.
+
+**Is this the right skill?** If the project already has `fastaiagent` code and the person did not
+say "Studio", it is not: evaluating that agent (including against a dataset on the platform),
+enforcing the platform's guardrails or connecting it to the platform is done in the code. Stop and
+use the fastaiagent-sdk skill. Do not ask for Agent Studio permissions for that work.
 
 ## Before you start
 

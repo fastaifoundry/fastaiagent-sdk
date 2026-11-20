@@ -101,6 +101,18 @@ def _hint(dotted: str) -> str:
     return ""
 
 
+def _warn_private(
+    mod: str, name: str, imported: object, path: Path, line: int, rep: Report
+) -> None:
+    """A name imported from a private module (``fastaiagent._internal...``) that the
+    package also exports: say to use the public import, which survives refactors."""
+    if not any(part.startswith("_") for part in mod.split(".")):
+        return
+    root = _import(ROOT)
+    if root is not None and getattr(root, name, None) is imported:
+        rep.warn(path, line, f"import {name} from {ROOT} ({ROOT}.{name}), not from {mod}.")
+
+
 def _check_file(path: Path, rep: Report) -> None:
     try:
         source = path.read_text(encoding="utf-8")
@@ -158,6 +170,8 @@ def _check_file(path: Path, rep: Report) -> None:
                     )
                 elif isinstance(imported, types.ModuleType):
                     aliases[item.asname or item.name] = imported
+                else:
+                    _warn_private(mod, item.name, imported, path, node.lineno, rep)
 
     reported: set[tuple[int, str]] = set()
     for node in ast.walk(tree):
@@ -237,10 +251,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strict", action="store_true", help="exit 1 on warnings too")
     args = ap.parse_args(argv)
 
-    if _import(ROOT) is None:
+    try:
+        importlib.import_module(ROOT)
+    except Exception as err:  # not only ImportError: say what actually failed
         print(
-            "fastaiagent is not importable from this Python. Install it"
-            " (pip install fastaiagent) in the environment you run this with.",
+            f"fastaiagent could not be imported by {sys.executable}:"
+            f" {type(err).__name__}: {err}\n"
+            "If it is not installed, install it (pip install fastaiagent) in the environment"
+            " you run this with. If it is installed, the error above is the reason; run"
+            f' `{sys.executable} -c "import fastaiagent"` to see the full traceback.',
             file=sys.stderr,
         )
         return 2

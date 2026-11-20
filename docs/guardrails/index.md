@@ -20,7 +20,10 @@ User Input → [Input Guardrails] → LLM → [Output Guardrails] → Response
 4. **Tool result guardrails** run on tool output before sending back to the LLM
 
 If a **blocking** guardrail fails, execution stops immediately with `GuardrailBlockedError`.
-Import it with `from fastaiagent._internal.errors import GuardrailBlockedError` (it is not exported from `fastaiagent`).
+Import it with `from fastaiagent import GuardrailBlockedError` (exported since 1.104.0; before
+that, from `fastaiagent._internal.errors`). It carries `guardrail_name`, `results` and, since
+1.104.0, `trace_id`: the blocked run's trace, which a blocked run had no other way to return
+(`None` when tracing is off).
 
 ## Built-in Guardrails
 
@@ -767,7 +770,7 @@ restored = Guardrail.from_dict(data)
 ## Error Handling
 
 ```python
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import GuardrailBlockedError
 
 try:
     result = agent.run("Some input")

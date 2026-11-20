@@ -88,6 +88,21 @@ def _gate_evidence(report: Any) -> dict[str, Any]:
     }
 
 
+def _warn_scripted_run_kept_local(run_id: str) -> None:
+    """Say why a gated run did not go to a connected plane. Silent when export is
+    off anyway: then nothing would have gone, and there is nothing to explain."""
+    from fastaiagent.eval.platform_export import eval_export_enabled
+
+    if not eval_export_enabled():
+        return
+    logger.warning(
+        "Eval run %s was answered by a scripted model (TestModel / FunctionModel), so its "
+        "verdict is kept local and not sent to the plane: it measures the script, not the "
+        "agent. Run the eval against a real model to send evidence.",
+        run_id,
+    )
+
+
 def record_gate_result(
     run_id: str,
     *,
@@ -137,6 +152,7 @@ def record_gate_result(
         raise ValueError(
             f"gate_outcome must be one of {VALID_GATE_OUTCOMES}, got {gate_outcome!r}"
         )
+    meta: dict[str, Any] = {}
     try:
         from fastaiagent._internal.config import get_config
         from fastaiagent.ui.db import init_local_db
@@ -168,6 +184,10 @@ def record_gate_result(
             db.close()
     except Exception:  # pragma: no cover — never disturb a verdict the user saw
         logger.debug("Failed to record gate result for run %s", run_id, exc_info=True)
+        return
+
+    if meta.get("scripted_models"):
+        _warn_scripted_run_kept_local(run_id)
         return
 
     # Only now is the run complete enough to be evidence. No-op when disconnected
@@ -498,7 +518,11 @@ class EvalResults:
         # outbox that can't drain; enabling later ships only NEW runs, no backlog.
         from fastaiagent.eval.platform_export import eval_export_enabled
 
-        synced = 0 if eval_export_enabled() else 1
+        # A run a scripted model answered (1.104.0) is never queued either: its
+        # verdict measures the script, and on the plane it would read as evidence
+        # about the agent.
+        scripted = bool(merged_metadata.get("scripted_models"))
+        synced = 0 if eval_export_enabled() and not scripted else 1
         db = init_local_db(resolved)
         try:
             db.execute(

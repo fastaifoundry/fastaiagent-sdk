@@ -1,6 +1,11 @@
 """FastAIAgent SDK — Build, debug, evaluate, and operate AI agents."""
 
-from fastaiagent._internal.errors import AgentTimeoutError, RunLimitError, StopAgent
+from fastaiagent._internal.errors import (
+    AgentTimeoutError,
+    GuardrailBlockedError,
+    RunLimitError,
+    StopAgent,
+)
 from fastaiagent._version import __version__
 from fastaiagent.agent import (
     Agent,
@@ -188,6 +193,8 @@ __all__ = [
     "StopAgent",
     "AgentTimeoutError",
     "RunLimitError",
+    # What a blocking guardrail (local or plane-authored) raises out of a run.
+    "GuardrailBlockedError",
     "TrimLongMessages",
     "ToolBudget",
     "RedactPII",

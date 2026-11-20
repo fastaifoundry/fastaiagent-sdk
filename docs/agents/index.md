@@ -123,8 +123,7 @@ print(result.output)  # Clean output passes both guardrails
 To guard against **input** containing PII, set the position explicitly:
 
 ```python
-from fastaiagent import Agent, LLMClient
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import Agent, GuardrailBlockedError, LLMClient
 from fastaiagent.guardrail import no_pii, GuardrailPosition
 
 agent = Agent(

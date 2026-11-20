@@ -49,6 +49,14 @@ _inflight: dict[str, threading.Event] = {}
 # pushing itself. Longer than the platform HTTP timeout so the normal case is a
 # clean handoff, not a double push.
 _INFLIGHT_WAIT_SECONDS = 15.0
+# Names whose first-run registration (``auto_register_async``) has been kicked but
+# not finished → an Event set when it finishes. Written *before* the thread starts,
+# unlike ``_inflight``, which the thread claims once it runs; a run waits on this
+# one (see :func:`registration_to_wait_for`). Guarded by ``_lock``.
+_registering: dict[str, threading.Event] = {}
+# How long an agent's first connected run waits for its own registration when the
+# plane has rules or approval policies that only apply to a registered agent.
+REGISTRATION_WAIT_SECONDS = 5.0
 # Names we've already warned about (unregistered-while-connected) — warn once.
 _warned: set[str] = set()
 # Agent ids the governance enrollment has named, or None until ``connect()``
@@ -318,13 +326,87 @@ def auto_register_async(agent: Agent) -> None:
         )
         return
 
+    name = agent.name
+    done = threading.Event()
+    with _lock:
+        _registering[name] = done
+
     def _run() -> None:
-        push_agent(agent, best_effort=True)
+        try:
+            push_agent(agent, best_effort=True)
+        finally:
+            done.set()
+            with _lock:
+                if _registering.get(name) is done:
+                    del _registering[name]
 
     try:
         threading.Thread(target=_run, daemon=True).start()
     except Exception:  # pragma: no cover - defensive
+        done.set()
+        with _lock:
+            _registering.pop(name, None)
         logger.debug("Could not kick first-run auto-register", exc_info=True)
+
+
+def _needs_plane_id(agent: Agent) -> bool:
+    """Whether the cached policy has anything that applies only to a registered
+    agent: a guardrail rule attached to agents, or an approval policy covering
+    one of this agent's tools. Domain-wide guardrail rules match without an id."""
+    from fastaiagent.client import _connection
+    from fastaiagent.governance import policy_matches
+
+    policy = getattr(_connection, "policy_cache", None) or {}
+    if any(rule.get("agent_ids") for rule in policy.get("guardrail_rules") or []):
+        return True
+    return any(policy_matches(getattr(t, "name", "") or "") for t in agent.tools or [])
+
+
+def registration_to_wait_for(agent: Agent) -> threading.Event | None:
+    """The first-run registration ``agent`` should wait for, or None.
+
+    None when the agent already has an id, nothing is registering it, or the
+    policy has nothing that needs its id (so domain-wide-only planes cost nothing).
+    A registration that already finished is linked here instead of waited on.
+    """
+    if getattr(agent, "agent_id", None):
+        return None
+    with _lock:
+        pending = _registering.get(agent.name)
+        cached = _pushed.get(agent.name)
+    if pending is None:
+        if cached is not None:
+            _stamp(agent, cached.agent_id)
+        return None
+    if not _needs_plane_id(agent):
+        return None
+    return pending
+
+
+def wait_for_registration(
+    agent: Agent, pending: threading.Event, timeout: float | None = None
+) -> None:
+    """Block (bounded) until ``pending`` finishes, then link ``agent`` to its id.
+
+    ``timeout`` defaults to :data:`REGISTRATION_WAIT_SECONDS`, read at call time.
+    On timeout the run goes on without the id, and a warning says what that
+    run did not apply — never silently.
+    """
+    if timeout is None:
+        timeout = REGISTRATION_WAIT_SECONDS
+    if not pending.wait(timeout):
+        _warn_once(
+            f"registration-wait:{agent.name}",
+            f"Agent {agent.name!r} started its first run before its registration with "
+            f"the plane finished ({timeout:g}s). Guardrail rules attached to it, and "
+            "approval policies on its tools, were not applied to that run. Call "
+            "agent.push() after connect() and before the first run.",
+        )
+        return
+    with _lock:
+        cached = _pushed.get(agent.name)
+    if cached is not None:
+        _stamp(agent, cached.agent_id)
 
 
 def flush_pending_registrations() -> list[str]:
@@ -494,8 +576,9 @@ def reset_registration_state() -> None:
         _pushed.clear()
         _warned.clear()
         _enrolled_ids = None
-        waiters = list(_inflight.values())
+        waiters = list(_inflight.values()) + list(_registering.values())
         _inflight.clear()
+        _registering.clear()
     for waiter in waiters:
         waiter.set()
 

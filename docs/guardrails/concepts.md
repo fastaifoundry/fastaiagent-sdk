@@ -46,7 +46,8 @@ applicable guardrails with a deliberate two-phase strategy:
 1. **Blocking guardrails run first, sequentially.** The first one that fails
    raises `GuardrailBlockedError` immediately — the run stops and nothing after
    it executes (fail-fast). Import it with
-   `from fastaiagent._internal.errors import GuardrailBlockedError` (it is not exported from `fastaiagent`).
+   `from fastaiagent import GuardrailBlockedError` (exported since 1.104.0; before that, from
+   `fastaiagent._internal.errors`).
 2. **Non-blocking guardrails run after, in parallel** (`asyncio.gather`). A
    non-blocking failure is *recorded* but does **not** stop the run, and an
    exception that escapes one is caught and turned into

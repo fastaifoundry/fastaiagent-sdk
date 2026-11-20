@@ -1,6 +1,6 @@
 ---
 name: fastaiagent-studio
-description: Use when the person wants an agent built, tried and evaluated through FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team and test it", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, run trials and evals in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. For writing fastaiagent code yourself, use the fastaiagent-sdk skill instead.
+description: Use only when the person wants a NEW agent built, or an agent Studio made changed, inside FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team in Studio", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, try it in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. Not for an agent whose code is in this project, and not for evaluating against a platform dataset, using platform guardrails or connecting an app to the platform: those are the fastaiagent-sdk skill.
 ---
 
 # Agent Studio, from the command line
@@ -11,6 +11,11 @@ command line **you are the planner**. Studio's own model is never called: you de
 with your model and send the design as a **spec**. Studio checks it and does the rest.
 
 After the export the code is the person's. Studio assists; it is not where agents live.
+
+**Is this the right skill?** If the project already has `fastaiagent` code and the person did not
+say "Studio", it is not: evaluating that agent (including against a dataset on the platform),
+enforcing the platform's guardrails or connecting it to the platform is done in the code. Stop and
+use the fastaiagent-sdk skill. Do not ask for Agent Studio permissions for that work.
 
 ## Before you start
 

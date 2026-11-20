@@ -44,6 +44,72 @@ fa.disconnect()  # flushes pending spans first
 - `fa.is_connected` is a lazy module attribute (bool), not a function.
 - `fa.refresh_policy()` re-pulls the plane policy (returns its version, or `None` when not connected).
 
+## What a connected agent gets from the plane, and what it sends
+
+The plane authors, stores and monitors; the SDK runs everything in your process. Nothing below
+lets the plane stop a run from outside it.
+
+| From the plane | How | Notes |
+|---|---|---|
+| Guardrail rules | Pulled with the policy at `connect()`; applied on every run with no code | Not re-pulled by itself: a rule authored after `connect()` applies after `fa.refresh_policy()`. Details in `guardrails.md`. |
+| Approval policies (governance) | Same policy pull | Gate governed tool calls; see `governance_fail_mode` above. |
+| Prompts | `PromptRegistry().get(slug)` | See Prompts below. |
+| Eval datasets | `Dataset.from_platform(name)` | `Dataset.publish(name)` sends one up. |
+| LLM-judge scorers | `Scorer.from_platform(name)` | Returns an `LLMJudge`. Unknown name: `PlatformNotFoundError`. |
+| Knowledge-base search | `PlatformKB(kb_id, name=, description=)` | Retrieval runs on the plane; the key needs `kb:read`. |
+| Curated memory facts | `PlaneFactBlock` in `fastaiagent.agent.memory_blocks` | Read-only, approved facts. |
+
+| To the plane | When | Notes |
+|---|---|---|
+| Traces, including guardrail spans | In the background while connected | `disconnect()` flushes; `export_traces=False` turns it off. |
+| Agent definitions | Auto-registered on the first run, or `agent.push()` | Local guardrails only; plane rules are never echoed back. |
+| Eval verdicts | Only gated runs (see `evals.md`) | Metadata only, never inputs or outputs. The key needs `eval:execute`. |
+| Datasets, prompts | `Dataset.publish(name)`, `PromptRegistry().publish(...)` | Explicit calls only. |
+
+SDK only, never from the plane: `code` guardrails (`fn=`), `action="reask"`, `guardrail_context`,
+`timeout_seconds`. Authoring guardrails, scorers and datasets happens in the console or the plane's
+API, not in the SDK.
+
+```signature
+fastaiagent.plane_guardrails_for_agent(agent_id)
+fastaiagent.Dataset.from_platform(name)
+fastaiagent.Dataset.publish(name)
+fastaiagent.Scorer.from_platform(name)
+fastaiagent.PlatformKB(kb_id, name=, description=)
+```
+
+## Connected-agent checklist
+
+Run through this before you say a connected app works. Each step names what proves it.
+
+1. **Key and address from the environment.** `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`; never
+   in code, never printed.
+2. **`connect()` in the entry point, `disconnect()` in a `finally`** (`SKILL.md` has the
+   `main.py`). `connect()` returning does not prove the plane answered: an unreachable plane only
+   logs a warning. A 401 or 403 raises `PlatformAuthError`.
+3. **Plane guardrails reached this agent.** Print
+   `[g.name for g in fa.plane_guardrails_for_agent(agent.agent_id or agent.name)]`. An empty list
+   means one of: none authored; authored after `connect()` (call `fa.refresh_policy()`); scoped to
+   another agent; a `code` rule (skipped); or the policy pull failed, which `connect()` and
+   `refresh_policy()` log as a warning. Do not report "guardrails are enforced" from an empty list.
+4. **Rules scoped to one agent.** Rules attached to agents, and approval policies on tools, are
+   matched by the plane's agent id. A connected agent registers on its first run, and that run
+   waits up to 5 s for its id when the policy needs it. A warning means it waited longer and
+   that run went without them. `agent.push()` after `connect()` registers it up front.
+5. **A rule actually fires.** Send one input it should catch and expect `GuardrailBlockedError`
+   (or the masked or warned output for `mask` and `warn`). Take that input from the rule (its
+   `config`, printed with its name) or ask the user for one; do not generate candidates by
+   searching the pattern. A test that proves it names that input. Then read the trace back.
+6. **Traces arrived.** `GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header
+   returns 200, after `disconnect()` has flushed. A finished run gives `result.trace_id`; a
+   blocked one raises, and its id is `err.trace_id` on the `GuardrailBlockedError`.
+7. **Eval verdicts arrived.** Only gated runs against a real model are sent (`evals.md`, "With a
+   platform"); a run a scripted model answered stays local, by design. After
+   `disconnect()`, `fastaiagent eval export --status` showing 0 runs waiting means the plane
+   confirmed them; `--dry-run` shows what would leave and whether a run is exportable.
+8. **Say what you checked.** Name each step you ran and what it printed, and each one you could
+   not run (no plane, no rule authored, key without `eval:execute`).
+
 ## Credentials resolution
 
 Python: arguments, then `FASTAIAGENT_TARGET` (target only). Nothing else is read.
@@ -130,6 +196,7 @@ print(result.trace_id, len(store.list_traces(last_hours=1)))
 
 - `trace_context` is a context manager yielding an OTel span; nested use nests spans. It needs no connection.
 - `list_traces(last_hours=24, limit=100)` defaults hide older traces: pass `last_hours=None` for all time. An unknown keyword only warns (`UserWarning`) and is ignored.
+- Tracing is on by default; there is nothing to turn on. Do not set `FASTAIAGENT_TRACE_ENABLED=1` in code or docs.
 - `FASTAIAGENT_TRACE_ENABLED=0` is the master switch: no local capture and no export at all (Replay and the UI then have nothing).
 - `FASTAIAGENT_TRACE_PAYLOADS=0` keeps prompts, outputs and tool arguments local: they are stripped before spans reach the plane or any `add_exporter` target. It does not reduce what `local.db` holds. An unparseable value counts as off (fails closed).
 - `add_exporter(exporter)` adds any OTel `SpanExporter` (Jaeger, Datadog, ...); it is wrapped so payloads are filtered per the settings above.

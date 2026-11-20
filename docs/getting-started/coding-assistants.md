@@ -20,6 +20,12 @@ reads when the work calls for it.
   what it ran and what it did not. It should keep an address you give it in `FASTAIAGENT_TARGET`
   instead of in code, test an MCP tool against a real local server instead of a fake, and not add
   tools or helpers you did not ask for.
+
+  For an app connected to a platform, the skill says what the platform supplies (guardrail rules,
+  prompts, eval datasets, judges, knowledge-base search) and what it receives (traces, eval
+  verdicts). It also gives a checklist the assistant runs before calling the app done: that the
+  plane's guardrail rules reached the agent, that one of them actually blocks, that the trace came
+  back from the platform, and that a gated eval run was sent.
 - **`fastaiagent-studio`** is read when you ask for an agent to be built through
   [Agent Studio](../platform/agent-studio.md). It teaches the `fastaiagent studio` commands and how
   to write a spec (see [The Studio skill](#the-studio-skill) below). It needs a platform.

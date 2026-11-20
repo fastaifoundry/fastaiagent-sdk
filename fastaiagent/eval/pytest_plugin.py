@@ -182,6 +182,9 @@ class _CollectedCase:
     # Connected mode needs it: the plane attaches eval evidence to a real agent,
     # so an unattributed run marks nothing.
     agent_name: str | None = None
+    # A scripted model (TestModel / FunctionModel) answered or judged this case
+    # (1.104.0). A session with one keeps its run local.
+    scripted: bool = False
 
 
 @dataclass
@@ -319,11 +322,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     persisted = collector.build_results(persisted_only=True)
     if persisted.cases:
         try:
+            scripted = any(c.scripted for c in collector.cases if c.persist)
             collector.run_id = persisted.persist_local(
                 run_id=collector.session_run_id,
                 run_name=run_name,
                 agent_name=_session_agent_name(collector),
                 kind="pytest",
+                metadata={"scripted_models": True} if scripted else None,
             )
         except Exception as e:  # pragma: no cover — non-fatal
             collector.persist_error = str(e)
@@ -616,11 +621,13 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             if collector is not None
             else None
         )
+        from fastaiagent._internal.scripted import scripted_model_recorder
+
         sig = inspect.signature(agent_fn)
         error: str | None = None
         output: Any = None
         try:
-            with agent_scope(span_ctx):
+            with agent_scope(span_ctx), scripted_model_recorder() as answered_by_script:
                 output = agent_fn(in_text) if len(sig.parameters) >= 1 else agent_fn()
         except Exception as e:
             # Infra failure: the agent never produced an output. Recorded as
@@ -647,6 +654,7 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                         record=record,
                         persist=persist,
                         agent_name=infer_agent_name(agent_fn),
+                        scripted=bool(answered_by_script),
                     )
                 )
             pytest.fail(
@@ -666,15 +674,16 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
         # for this case, and the case is still added to the session run (it was
         # lost). The agent's tool calls and the row's expectations reach the
         # scorers, as in ``evaluate()``.
-        per_scorer, scored, scoring_trace_id = score_case(
-            scorer_objs,
-            input=str(in_text),
-            output=output_text,
-            expected=exp,
-            score_kwargs={**trajectory_facts(output), **row_facts(eval_case)},
-            span_context=span_ctx,
-            subject_trace_id=trace_id,
-        )
+        with scripted_model_recorder() as judged_by_script:
+            per_scorer, scored, scoring_trace_id = score_case(
+                scorer_objs,
+                input=str(in_text),
+                output=output_text,
+                expected=exp,
+                score_kwargs={**trajectory_facts(output), **row_facts(eval_case)},
+                span_context=span_ctx,
+                subject_trace_id=trace_id,
+            )
         scorer_results: dict[str, ScorerResult] = dict(scored)
 
         record = EvalCaseRecord(
@@ -692,6 +701,7 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                     scorer_results=scorer_results,
                     persist=persist,
                     agent_name=infer_agent_name(agent_fn),
+                    scripted=bool(answered_by_script or judged_by_script),
                 )
             )
 

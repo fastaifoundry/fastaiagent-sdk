@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -64,6 +65,11 @@ class GovPlane:
         self.enroll_gate: threading.Event | None = None
         # Every request, as ``"METHOD /path"``, in arrival order.
         self.paths: list[str] = []
+        # Seconds ``POST /sdk/agents`` waits before answering: a slow link, which
+        # lets an agent's first run reach its guardrails before its id arrives.
+        self.push_delay = 0.0
+        # What ``GET /policy`` answers; anything but 200 is a failed pull.
+        self.policy_status = 200
 
     def ledger(self, run_id: str) -> list[dict[str, Any]]:
         """The HITL events received for one run, oldest first."""
@@ -113,6 +119,8 @@ class _Handler(BaseHTTPRequestHandler):
                     ],
                 },
             )
+        elif self.path == "/public/v1/policy" and st.policy_status != 200:
+            self._json(st.policy_status, {"detail": "policy unavailable (test)"})
         elif self.path == "/public/v1/policy":
             self._json(
                 200,
@@ -145,6 +153,8 @@ class _Handler(BaseHTTPRequestHandler):
         with st.lock:
             st.paths.append(f"POST {self.path}")
         if self.path == "/public/v1/sdk/agents" and st.accept_agent_push:
+            if st.push_delay:
+                time.sleep(st.push_delay)
             name = self._body().get("name")
             agent_id = AGENT_ID
             if st.push_ids_by_name:

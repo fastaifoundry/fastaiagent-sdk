@@ -222,6 +222,12 @@ def test_the_real_mcp_tool_is_found_and_called():
     assert "94105" in result.output
 ```
 
+**Test the transport the app uses.** The test above proves stdio. An app that connects with
+`server_url=` (streamable HTTP) takes a different path that this test never runs. Either test that
+path too (start the same server with `mcp.run(transport="streamable-http")` in an `e2e`-marked test
+and connect by URL), or say in your summary that the HTTP path is untested. Then run the app once
+against the real server, as `SKILL.md` rule 10 asks.
+
 ## Deferred tools
 
 - `deferred=True` (on `@tool`, `FunctionTool`, `RESTTool`, `MCPTool`, or via `from_server(deferred=True)`) keeps a tool's definition out of the model request until needed. The model is offered one built-in tool, `load_tools(names)`, whose description lists each deferred tool by name and first docstring line; a loaded tool stays available for the rest of the run.

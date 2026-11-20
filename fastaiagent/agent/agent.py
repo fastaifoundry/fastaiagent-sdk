@@ -1067,6 +1067,29 @@ class Agent:
             )
         )
 
+    async def _await_registration(self) -> None:
+        """On a connected first run, wait (bounded) for this agent's own
+        registration when the plane has rules attached to agents or an approval
+        policy on one of its tools. Both need the plane's ``agent_id``, which the
+        background registration started at run start supplies, so without the
+        wait a first run could skip them. A no-op in every other case, and never
+        raises into the run.
+        """
+        try:
+            from fastaiagent._platform.push import (
+                registration_to_wait_for,
+                wait_for_registration,
+            )
+
+            pending = registration_to_wait_for(self)
+            if pending is None:
+                return
+            import asyncio
+
+            await asyncio.to_thread(wait_for_registration, self, pending)
+        except Exception:
+            logger.debug("Could not wait for agent registration", exc_info=True)
+
     def _effective_guardrails(self) -> list[Guardrail]:
         """The agent's local guardrails plus any plane-authored guardrails
         distributed to this connected agent via the cached governance policy
@@ -1612,6 +1635,7 @@ class Agent:
             # Effective guardrails = the agent's local list + any authored on the
             # plane and distributed to this connected agent. Computed once so
             # input/tool/output enforcement all see the same set.
+            await self._await_registration()
             eff_guardrails = self._effective_guardrails()
 
             # Execute input guardrails (blocking). Guardrails are text-only
@@ -2081,6 +2105,7 @@ class Agent:
                     stopped_at_start = stop
 
             # Effective guardrails = local + plane-authored (see arun for details).
+            await self._await_registration()
             eff_guardrails = self._effective_guardrails()
 
             # Execute input guardrails (blocking) on the text portion.

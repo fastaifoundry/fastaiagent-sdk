@@ -1,6 +1,6 @@
 ---
 name: fastaiagent-sdk
-description: Use when writing, changing, testing or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
+description: Use when writing, changing, testing, evaluating or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform, including evaluating an agent against a platform dataset and enforcing guardrails authored on the platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
 ---
 
 # FastAIAgent SDK
@@ -37,7 +37,8 @@ Each is a mistake assistants make today.
    tool and reusing its recorded output; the SDK's own `rerun()` blocks tools you did not supply
    or allow (`references/tools.md`).
 7. **Never put a key in code.** Read `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `FASTAIAGENT_API_KEY`
-   and the rest from the environment. Never print or log one.
+   and the rest from the environment. Never print or log one. If a key is not in the environment,
+   ask the user how to load it; do not search their home directory or other projects for one.
 8. **Write an offline test next to every agent** with `fastaiagent.testing.TestModel`
    (see `references/testing.md`). A test that needs a live model key is marked and skipped
    without one.
@@ -46,7 +47,8 @@ Each is a mistake assistants make today.
 10. **Check, then run the real thing.** Run this skill's `scripts/check_imports.py <your files>`
     with the project's own interpreter (for example `.venv/bin/python
     .agents/skills/fastaiagent-sdk/scripts/check_imports.py desk/agent.py`); it works from the
-    project root. It resolves every `fastaiagent` import and attribute against the installed SDK
+    project root. Use that interpreter for every command, not a bare `python`, which can be a
+    different Python without the SDK; never report "not installed" from a bare `python`. It resolves every `fastaiagent` import and attribute against the installed SDK
     and flags removed names. Then run your offline test. Then, if the user's model key is in the
     environment, run the real entry point once and read what it prints. Offline tests use scripted
     models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
@@ -62,7 +64,9 @@ Each is a mistake assistants make today.
 | More than one agent: `Supervisor` + `Worker`, `Swarm`, `Chain` | `references/teams.md` |
 | Safety checks on input, output or tool calls | `references/guardrails.md` |
 | Measuring quality: `evaluate`, scorers, the pytest plugin, gates | `references/evals.md` |
-| Connecting to a platform, prompts, traces, push, the runner, the CLI | `references/platform.md` |
+| Connecting to a platform: what it supplies (guardrail rules, prompts, datasets, judges, knowledge bases) and receives (traces, eval verdicts), the connected-agent checklist, push, the runner, the CLI | `references/platform.md` |
+| Guardrails authored on the platform | `references/guardrails.md`, "Plane-authored rules" |
+| Eval datasets, judges and verdicts on the platform | `references/evals.md`, "With a platform" |
 | Testing without a model | `references/testing.md` |
 | Old code or old advice that no longer works | `references/changed.md` |
 
@@ -144,8 +148,8 @@ if __name__ == "__main__":
     main(sys.argv[1])
 ```
 
-Build what was asked. Do not add tools, fake data, aliases or helper layers the user did not ask
-for; say what you would add and let them decide. When a choice has a cost the user should hear
+Build what was asked. Do not add tools, fake data, aliases, command-line flags or helper layers the
+user did not ask for; say what you would add and let them decide. When a choice has a cost the user should hear
 (for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
 guardrail is coarse), say it in your summary.
 
