@@ -39,7 +39,8 @@ pytestmark = pytest.mark.e2e
 
 QUESTION = (
     "Search the web for the latest stable Python release, and get the weather in Paris "
-    "with the get_weather tool. Answer in two short sentences."
+    "with the get_weather tool (not from the web: only the tool has today's reading). "
+    "Answer in two short sentences."
 )
 
 
