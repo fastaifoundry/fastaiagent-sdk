@@ -205,8 +205,19 @@ async def execute_chain(
     strict_routing: bool = False,
     middleware: list[Any] | None = None,
     initial_node_results: dict[str, Any] | None = None,
+    iteration_counters: dict[str, int] | None = None,
+    _cycle_mw_ctx: Any = None,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
+
+    ``iteration_counters`` (1.105.0): how many times each cyclic edge has been
+    taken so far. A cycle re-enters this function, and each call used to start
+    its own empty counters, so a cyclic edge's ``max_iterations`` above 1 was
+    never reached: a loop whose exit condition never came true ran until
+    Python's recursion limit (about 980 passes). The cycle now passes the same
+    dict down. A resume still starts its counters at zero (the checkpoint
+    records them, nothing reads them back yet), so a resumed loop gets a fresh
+    ``max_iterations`` budget per resume.
 
     ``initial_node_results`` (1.95.0): the results of nodes that already ran,
     for a resume or a fork, so a node templating ``{{node_results.<id>...}}``
@@ -236,7 +247,8 @@ async def execute_chain(
     execution_id = execution_id or str(uuid.uuid4())
     state = ChainState(initial_state)
     node_results: dict[str, Any] = dict(initial_node_results or {})
-    iteration_counters: dict[str, int] = {}
+    if iteration_counters is None:
+        iteration_counters = {}
     node_map = {n.id: n for n in nodes}
 
     # Make execution_id visible to interrupt() / @idempotent.
@@ -248,7 +260,11 @@ async def execute_chain(
     # a context for the tool nodes' ``wrap_tool`` (agent nodes make their own).
     mw_ctx: Any = None
     state_token: Any = None
-    if middleware:
+    if _cycle_mw_ctx is not None:
+        # A loop pass of a run that already opened the middleware's state:
+        # reuse its context, so budgets and counters span the whole loop.
+        mw_ctx = _cycle_mw_ctx
+    elif middleware:
         from fastaiagent.agent.middleware import MiddlewareContext, open_container_state
 
         state_token = open_container_state(middleware)
@@ -299,6 +315,8 @@ async def execute_chain(
 
         max_total_steps = 500
         step_count = 0
+        executed: list[str] = []  # nodes run by this frame and its loop passes
+        done_in_cycle: set[str] = set()  # ... of which, run by a loop pass
 
         for idx in range(start_idx, len(exec_order)):
             node_id = exec_order[idx]
@@ -306,8 +324,9 @@ async def execute_chain(
             if node is None:
                 continue
 
-            # Skip nodes that no upstream branch routed to.
-            if node_id not in activated:
+            # Skip nodes that no upstream branch routed to, and nodes a loop
+            # pass taken from this frame has already run.
+            if node_id not in activated or node_id in done_in_cycle:
                 continue
             # A cancel that arrived during a blocking (sync) node lands here,
             # before the next node starts (1.93.0).
@@ -468,6 +487,7 @@ async def execute_chain(
             # Validate state after update
             if state_schema:
                 state.validate(state_schema)
+            executed.append(node_id)
 
             # Checkpoint
             if checkpointer is not None:
@@ -510,10 +530,10 @@ async def execute_chain(
                 outgoing_by_source.get(node_id, []),
                 strict=strict_routing,
             )
-            for sel in selected:
-                activated.add(sel.target)
-
-            # Handle cyclic edges from this node
+            # Handle cyclic edges from this node. Taking one re-enters the chain
+            # at the edge's target and runs it through to the end, so what lies
+            # downstream of this node is that pass's to run, not this frame's.
+            took_cycle = False
             for edge in edges:
                 if edge.source != node_id or not edge.is_cyclic:
                     continue
@@ -527,8 +547,10 @@ async def execute_chain(
                 iteration_counters.setdefault(counter_key, 0)
                 iteration_counters[counter_key] += 1
 
-                # Check exit condition
-                if exit_condition and _evaluate_condition(exit_condition, context):
+                # Check exit condition, against what this node just wrote (the
+                # same refreshed context routing uses: ``context`` predates it,
+                # so an exit on ``{{state...}}`` lagged one pass behind).
+                if exit_condition and _evaluate_condition(exit_condition, routing_context):
                     continue  # exit the cycle, proceed normally
 
                 # Check max iterations
@@ -542,8 +564,8 @@ async def execute_chain(
                             f"Options:\n"
                             f"  1. Increase the limit: "
                             f"max_iterations={max_iter * 2}\n"
-                            f"  2. Add an exit_condition\n"
-                            f"  3. Set on_max_reached='continue'"
+                            f"  2. Check the exit_condition: it never held. It is a "
+                            f"template, e.g. '{{{{node_results.{src}.output}}}} startswith PASS'"
                         )
                     continue  # "continue" or "exit_to_node" — just proceed
 
@@ -560,6 +582,14 @@ async def execute_chain(
                     hitl_handler=hitl_handler,
                     run_context=run_context,
                     strict_routing=strict_routing,
+                    # The same dict, so the edge's cap counts the whole loop.
+                    iteration_counters=iteration_counters,
+                    # The chain's middleware applies to every pass, with the
+                    # state this run already opened (not a fresh one per pass).
+                    middleware=middleware,
+                    _cycle_mw_ctx=mw_ctx,
+                    # Nodes that ran before the loop stay visible to templates.
+                    initial_node_results=dict(node_results),
                 )
                 # If a node inside the cycle interrupted, bubble paused
                 # status up — don't merge state from a partial run. A gate that
@@ -569,7 +599,19 @@ async def execute_chain(
                 # Merge cycle results
                 state = ChainState(cycle_result["final_state"])
                 node_results.update(cycle_result["node_results"])
+                # That pass ran the rest of the chain. Do not run those nodes
+                # again here: a node after a retry loop ran once per pass.
+                ran_in_pass = cycle_result.get("executed", [])
+                done_in_cycle.update(ran_in_pass)
+                executed.extend(ran_in_pass)
+                took_cycle = True
                 break  # only follow one cyclic edge
+
+            # Activate the non-cyclic targets only when the loop was not taken:
+            # otherwise the routing that counts is the last pass's, made there.
+            if not took_cycle:
+                for sel in selected:
+                    activated.add(sel.target)
 
         # Determine final output — pick the last node in topo order that
         # actually ran (conditional routing can prune the tail), falling
@@ -585,6 +627,7 @@ async def execute_chain(
             "final_state": state.snapshot(),
             "execution_id": execution_id,
             "node_results": node_results,
+            "executed": executed,
             "status": "completed",
             "pending_interrupt": None,
         }
@@ -672,11 +715,24 @@ async def _execute_node(
         from fastaiagent.multimodal.image import Image as _MMImage
         from fastaiagent.multimodal.pdf import PDF as _MMPDF
 
-        raw_input = context.get("input", "")
-        if isinstance(raw_input, (str, _MMImage, _MMPDF, list)):
-            agent_input = raw_input
+        template = node.config.get("agent_input")
+        agent_input: Any
+        if isinstance(template, str):
+            # ``add_node(..., input=...)`` (1.105.0): what this agent works on,
+            # rendered from the run — another node's output, state, the input.
+            agent_input = _render_template(template, context)
+            if not agent_input.strip():
+                raise ChainError(
+                    f"Agent node '{node.id}' rendered an empty input from "
+                    f"{template!r}. A node it reads has not run yet on this path, or "
+                    f"the name is misspelled. The agent was not called."
+                )
         else:
-            agent_input = str(raw_input)
+            raw_input = context.get("input", "")
+            if isinstance(raw_input, (str, _MMImage, _MMPDF, list)):
+                agent_input = raw_input
+            else:
+                agent_input = str(raw_input)
         # Agent spans nest under the chain root span — see Chain.aexecute.
         agent = node.agent._with_outer_middleware(middleware) if middleware else node.agent
         result = await agent.arun(agent_input, context=run_context)

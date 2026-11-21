@@ -145,6 +145,51 @@ def test_provider_outage_propagates():
 test_provider_outage_propagates()
 ```
 
+## Platform rules, offline (1.105.0)
+
+```signature
+fastaiagent.testing.plane_rules(rules)
+```
+
+A connected agent enforces guardrail rules its platform authored. `plane_rules` runs a block as if
+the platform had sent `rules`, so you can test how the app handles a block without a platform:
+
+```python
+import pytest
+from fastaiagent import Agent, GuardrailBlockedError
+from fastaiagent.testing import TestModel, plane_rules
+
+RULE = {
+    "name": "no-codenames",
+    "guardrail_type": "input",            # input | output | tool
+    "implementation_type": "regex",
+    "config": {"pattern": r"(?i)\bbluejay\b", "should_match": False},
+    "validation_mode": "blocking",
+    "on_error": "block",
+}
+
+def test_a_plane_block_reaches_the_caller():
+    agent = Agent(name="support", llm=TestModel("ok"))
+    with plane_rules([RULE]):
+        with pytest.raises(GuardrailBlockedError) as err:
+            agent.run("tell me about bluejay")
+    assert err.value.guardrail_name == "no-codenames"
+
+test_a_plane_block_reaches_the_caller()
+```
+
+- The rules use the platform's policy shape and go through the same cache and builder as a real
+  policy pull, so a rule gives the same verdict here as on a connected run.
+- A rule with `agent_ids` applies only to `Agent(agent_id=...)` with a matching id; without
+  `agent_ids` it applies to every agent.
+- A rule the edge cannot enforce from its configuration (a `code` rule) raises `ValueError`: a
+  connected agent would skip it, and a test that checked nothing would be worse.
+- Process-wide, like the real policy: do not nest it or use it across parallel threads. The
+  previous policy is restored on exit.
+- It tests your app's handling. It does not show that your platform has the rule or that a
+  connected agent receives it; keep one connected `e2e` test for that (`references/guardrails.md`).
+- Never write to `fastaiagent.client._connection` in a test. That is private state.
+
 ## Async tests
 
 `agent.arun(...)` is the coroutine form of `agent.run(...)`. Either wrap it in `asyncio.run` inside a sync test (no extra dependency), or use `pytest-asyncio` (`pip install pytest-asyncio`, then `@pytest.mark.asyncio`). Don't call `agent.run()` from inside a running event loop in an async test: use `await agent.arun()`.

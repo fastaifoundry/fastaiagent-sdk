@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.104.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.105.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -720,14 +720,18 @@ agent = Agent(
     guardrails=[no_pii(), json_valid()]
 )
 
-# Chains with loops (retry until quality is good enough)
+# Chains with loops (an agent drafts, a function checks, retry until it passes)
 chain = Chain("support-pipeline", state_schema=SupportState)
-chain.add_node("research", agent=researcher)
-chain.add_node("evaluate", agent=evaluator)
-chain.add_node("respond", agent=responder)
-chain.connect("research", "evaluate")
-chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality >= 0.8")
-chain.connect("evaluate", "respond", condition="quality >= 0.8")
+chain.add_node("draft", agent=drafter)
+chain.add_node(  # a tool node can read the draft; it answers "PASS" or "FAIL: what to fix"
+    "check", tool=check_reply, input_mapping={"draft": "{{node_results.draft.output}}"}
+)
+chain.connect("draft", "check")
+chain.connect(  # go back to draft until the check answers "PASS", at most 3 passes
+    "check", "draft",
+    max_iterations=3,
+    exit_condition="{{node_results.check.output}} startswith PASS",
+)
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```

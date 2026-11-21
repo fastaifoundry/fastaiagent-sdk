@@ -254,10 +254,14 @@ finally:
 - **Do not copy them into code.** Do not rebuild a plane rule locally or pass the result of
   `plane_guardrails_for_agent` into `guardrails=[...]`. Plane rules are never pushed back with the
   agent's definition.
-- **Testing.** An offline test with `TestModel` sees no plane rules, and a test that passes a local
-  guardrail (`no_pii()`, a regex) in their place tests that guardrail, not the plane's. Put the
-  test that proves a plane rule fires in `tests/e2e/`, marked `e2e`, skipped when
-  `FASTAIAGENT_TARGET` is not set, and do not add a `guardrails=` parameter only to fake it.
+- **Testing.** Two tests, two different questions.
+  *How does my app behave when a plane rule blocks?* Offline, with
+  `fastaiagent.testing.plane_rules([...])` (1.105.0; `references/testing.md`): the rules go through
+  the same cache and builder as the real policy. Do not write to `_connection.policy_cache`, pass
+  a local guardrail (`no_pii()`, a regex) in their place, or add a `guardrails=` parameter to fake it.
+  *Does my platform's rule reach this agent and fire?* Only a connected test answers that: in
+  `tests/e2e/`, marked `e2e`, skipped when `FASTAIAGENT_TARGET` is not set. A passing
+  `plane_rules` test is not proof that the platform enforces anything.
 - **Evidence.** Each check is a guardrail span on the run's trace, which reaches the plane with the
   trace. The plane's own guardrail views are read in the console, not through the SDK.
 - SDK-only: `action="reask"`, `guardrail_context`, `timeout_seconds` and the regex ReDoS bound, and `code` rules via `fn=`.

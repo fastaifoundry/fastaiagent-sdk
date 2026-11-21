@@ -164,7 +164,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`37_kb_ui.py`](37_kb_ui.py) — KB management via Local UI
 
 ### Workflows & multi-agent
-- [`02_chain_with_cycles.py`](02_chain_with_cycles.py) — `Chain` DAG with cycles
+- [`02_chain_with_cycles.py`](02_chain_with_cycles.py) — `Chain` retry loop: an agent drafts, a function checks, `max_iterations` + `exit_condition` on the edge that goes back
 - [`72_node_framework.py`](72_node_framework.py) — code-first `@node`, typed I/O, `output_key`
 - [`18_supervisor_worker.py`](18_supervisor_worker.py) — `Supervisor` + `Worker` (also see `research-agent/`)
 - [`65_supervisor_validate.py`](65_supervisor_validate.py) — `Supervisor(validate_outputs=True)`: the manager inspects each worker's output and re-invokes it once with feedback (runs under pytest, no keys)
@@ -173,7 +173,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
   KBs that say what they hold, `Supervisor(memory=)`, whole-team tokens and the workers' tool calls,
   Swarm handoffs that carry what was found, one trace per streamed run, and (with `FASTAIAGENT_API_KEY`)
   members registered and governed as themselves
-- [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end
+- [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end: research, then a summariser given the research with `input=`
 - [`39_workflows_demo.py`](39_workflows_demo.py) — workflow comparison
 - [`47_workflow_topology.py`](47_workflow_topology.py) — topology API for the UI
 

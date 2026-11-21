@@ -76,7 +76,9 @@ def _ensure_ui_extra() -> None:
             missing.append(mod)
     if missing:
         console.print(f"[red]Missing packages:[/red] {', '.join(missing)}")
-        console.print(_EXTRAS_HINT)
+        # markup=False: Rich reads ``[ui]`` as a style tag and drops it, which
+        # printed ``pip install 'fastaiagent'`` — the command that does not help.
+        console.print(_EXTRAS_HINT, markup=False)
         raise typer.Exit(code=2)
 
 

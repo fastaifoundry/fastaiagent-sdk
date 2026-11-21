@@ -53,7 +53,12 @@ Each is a mistake assistants make today.
     environment, run the real entry point once and read what it prints. Offline tests use scripted
     models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
     model id or an address you have not tried:** a failing real run is evidence, your belief is
-    not. If you have no key, say you did not run it.
+    not. If you have no key, say you did not run it. **Check before you say something is
+    missing:** look at whether the key or setting is set (for example
+    `python -c "import os; print(bool(os.environ.get('OPENAI_API_KEY')))"`) and report what the
+    check printed; assistants have said "no key in the environment" without looking, when it was
+    there. When the user asks to *see* a run and a key is set, show the real-model run: scripted
+    models are for tests, and a `--real` switch you never use is not a run.
 
 ## Where to read
 
@@ -67,7 +72,8 @@ Each is a mistake assistants make today.
 | Connecting to a platform: what it supplies (guardrail rules, prompts, datasets, judges, knowledge bases) and receives (traces, eval verdicts), the connected-agent checklist, push, the runner, the CLI | `references/platform.md` |
 | Guardrails authored on the platform | `references/guardrails.md`, "Plane-authored rules" |
 | Eval datasets, judges and verdicts on the platform | `references/evals.md`, "With a platform" |
-| Testing without a model | `references/testing.md` |
+| Versioned prompts in a registry (local or on the platform), rolling out a new version | `references/platform.md`, "Prompts" |
+| Testing without a model, and platform rules offline (`plane_rules`) | `references/testing.md` |
 | Old code or old advice that no longer works | `references/changed.md` |
 
 Read only the files you need. A tool that cannot read this folder can fetch the same content as one
@@ -149,7 +155,9 @@ if __name__ == "__main__":
 ```
 
 Build what was asked. Do not add tools, fake data, aliases, command-line flags or helper layers the
-user did not ask for; say what you would add and let them decide. When a choice has a cost the user should hear
+user did not ask for; say what you would add and let them decide. That includes handling for cases
+that do not exist yet (rule types the platform does not have, providers the user does not use):
+build for what is there. When a choice has a cost the user should hear
 (for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
 guardrail is coarse), say it in your summary.
 

@@ -114,6 +114,12 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
   Do not read an empty list as "nothing to enforce".
 - **Refresh.** `fa.refresh_policy()` re-pulls the policy mid-session to pick up a
   guardrail authored *after* `connect()`.
+- **Testing offline.** `fastaiagent.testing.plane_rules([...])` (*since 1.105.0*)
+  runs a block as if the plane had distributed a set of rules, through the same
+  cache and builder as a real policy pull, so you can test how your app handles
+  a plane block with no plane. It does not show that your plane has the rule or
+  that a connected agent receives it. See
+  [Testing](../testing/index.md#platform-guardrail-rules-offline).
 - **Local-only is unchanged.** With no connection there is no policy cache, so a
   local run enforces exactly its own `guardrails=[...]` and pays nothing.
 - **Plane rules stay plane rules.** A reconstructed guardrail is marked

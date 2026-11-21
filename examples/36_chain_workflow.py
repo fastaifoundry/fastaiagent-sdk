@@ -4,6 +4,10 @@ Demonstrates the 0.8 workflow-root behavior: a Chain with two Agents
 emits ONE trace with a `chain.<name>` root span wrapping the two child
 `agent.*` spans (which in turn wrap their LLM call spans).
 
+The summariser works on the researcher's output, so its node passes
+``input="{{node_results.research.output}}"`` (1.105.0). Without ``input=`` an
+agent node is given the chain's input.
+
 Prereqs:
     pip install 'fastaiagent[ui,openai]'
     export OPENAI_API_KEY=...
@@ -25,14 +29,11 @@ def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         raise SystemExit("OPENAI_API_KEY is required to run this example.")
 
-    llm = LLMClient(provider="openai", model="gpt-4o-mini")
+    llm = LLMClient(provider="openai", model="gpt-5-mini")
 
     researcher = Agent(
         name="researcher",
-        system_prompt=(
-            "Given a topic, write 2 crisp bullet points with the key facts. "
-            "Be brief."
-        ),
+        system_prompt=("Given a topic, write 2 crisp bullet points with the key facts. Be brief."),
         llm=llm,
     )
     summariser = Agent(
@@ -44,15 +45,20 @@ def main() -> None:
     )
 
     chain = Chain(name="research-then-summarise")
-    chain.add_node("research", agent=researcher)
-    chain.add_node("summarise", agent=summariser)
+    chain.add_node("research", agent=researcher)  # given the chain's input (the topic)
+    chain.add_node(
+        "summarise",
+        agent=summariser,
+        # Without input= the summariser would get the topic too, never the bullets.
+        input="{{node_results.research.output}}",
+    )
     chain.connect("research", "summarise")
 
     print("► running chain research-then-summarise")
     result = chain.execute({"message": "The history of SQLite"})
 
-    preview = str(result.output)[:160]
-    print("\noutput:", preview)
+    print("\nresearch:", result.node_results["research"]["output"][:300])
+    print("\nsummary: ", result.node_results["summarise"]["output"][:300])
     print("\nOne trace, tree of spans:")
     print("    chain.research-then-summarise")
     print("      agent.researcher")

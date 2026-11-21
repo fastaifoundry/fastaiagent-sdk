@@ -249,3 +249,26 @@ def test_eval_run_with_an_agent_that_fails_to_import_is_invalid(
     assert result.exit_code == 3, result.output
     assert "could not load the agent" in result.stderr
     assert "ModuleNotFoundError" in result.stderr
+
+
+def test_ui_start_without_the_extra_names_the_extra() -> None:
+    """Rich read ``[ui]`` as a style tag and dropped it, so the hint said
+    ``pip install 'fastaiagent'`` — the command that does not help (1.105.0).
+    In its own process, with the web framework blocked the way a core-only
+    install lacks it (``sys.modules[...] = None`` makes the import fail)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "sys.modules['fastapi'] = None\n"
+        "from typer.testing import CliRunner\n"
+        "from fastaiagent.cli.main import app\n"
+        "r = CliRunner().invoke(app, ['ui', 'start', '--no-open'])\n"
+        "print('EXIT', r.exit_code)\n"
+        "print(r.output)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True).stdout
+    assert "EXIT 2" in out, out
+    assert "Missing packages: fastapi" in out
+    assert "pip install 'fastaiagent[ui]'" in out

@@ -56,7 +56,12 @@ Each is a mistake assistants make today.
     environment, run the real entry point once and read what it prints. Offline tests use scripted
     models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
     model id or an address you have not tried:** a failing real run is evidence, your belief is
-    not. If you have no key, say you did not run it.
+    not. If you have no key, say you did not run it. **Check before you say something is
+    missing:** look at whether the key or setting is set (for example
+    `python -c "import os; print(bool(os.environ.get('OPENAI_API_KEY')))"`) and report what the
+    check printed; assistants have said "no key in the environment" without looking, when it was
+    there. When the user asks to *see* a run and a key is set, show the real-model run: scripted
+    models are for tests, and a `--real` switch you never use is not a run.
 
 ## Where to read
 
@@ -70,7 +75,8 @@ Each is a mistake assistants make today.
 | Connecting to a platform: what it supplies (guardrail rules, prompts, datasets, judges, knowledge bases) and receives (traces, eval verdicts), the connected-agent checklist, push, the runner, the CLI | `references/platform.md` |
 | Guardrails authored on the platform | `references/guardrails.md`, "Plane-authored rules" |
 | Eval datasets, judges and verdicts on the platform | `references/evals.md`, "With a platform" |
-| Testing without a model | `references/testing.md` |
+| Versioned prompts in a registry (local or on the platform), rolling out a new version | `references/platform.md`, "Prompts" |
+| Testing without a model, and platform rules offline (`plane_rules`) | `references/testing.md` |
 | Old code or old advice that no longer works | `references/changed.md` |
 
 Read only the files you need. A tool that cannot read this folder can fetch the same content as one
@@ -152,7 +158,9 @@ if __name__ == "__main__":
 ```
 
 Build what was asked. Do not add tools, fake data, aliases, command-line flags or helper layers the
-user did not ask for; say what you would add and let them decide. When a choice has a cost the user should hear
+user did not ask for; say what you would add and let them decide. That includes handling for cases
+that do not exist yet (rule types the platform does not have, providers the user does not use):
+build for what is there. When a choice has a cost the user should hear
 (for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
 guardrail is coarse), say it in your summary.
 
@@ -674,6 +682,51 @@ def test_provider_outage_propagates():
 test_provider_outage_propagates()
 ```
 
+## Platform rules, offline (1.105.0)
+
+```signature
+fastaiagent.testing.plane_rules(rules)
+```
+
+A connected agent enforces guardrail rules its platform authored. `plane_rules` runs a block as if
+the platform had sent `rules`, so you can test how the app handles a block without a platform:
+
+```python
+import pytest
+from fastaiagent import Agent, GuardrailBlockedError
+from fastaiagent.testing import TestModel, plane_rules
+
+RULE = {
+    "name": "no-codenames",
+    "guardrail_type": "input",            # input | output | tool
+    "implementation_type": "regex",
+    "config": {"pattern": r"(?i)\bbluejay\b", "should_match": False},
+    "validation_mode": "blocking",
+    "on_error": "block",
+}
+
+def test_a_plane_block_reaches_the_caller():
+    agent = Agent(name="support", llm=TestModel("ok"))
+    with plane_rules([RULE]):
+        with pytest.raises(GuardrailBlockedError) as err:
+            agent.run("tell me about bluejay")
+    assert err.value.guardrail_name == "no-codenames"
+
+test_a_plane_block_reaches_the_caller()
+```
+
+- The rules use the platform's policy shape and go through the same cache and builder as a real
+  policy pull, so a rule gives the same verdict here as on a connected run.
+- A rule with `agent_ids` applies only to `Agent(agent_id=...)` with a matching id; without
+  `agent_ids` it applies to every agent.
+- A rule the edge cannot enforce from its configuration (a `code` rule) raises `ValueError`: a
+  connected agent would skip it, and a test that checked nothing would be worse.
+- Process-wide, like the real policy: do not nest it or use it across parallel threads. The
+  previous policy is restored on exit.
+- It tests your app's handling. It does not show that your platform has the rule or that a
+  connected agent receives it; keep one connected `e2e` test for that (`references/guardrails.md`).
+- Never write to `fastaiagent.client._connection` in a test. That is private state.
+
 ## Async tests
 
 `agent.arun(...)` is the coroutine form of `agent.run(...)`. Either wrap it in `asyncio.run` inside a sync test (no extra dependency), or use `pytest-asyncio` (`pip install pytest-asyncio`, then `@pytest.mark.asyncio`). Don't call `agent.run()` from inside a running event loop in an async test: use `await agent.arun()`.
@@ -905,7 +958,7 @@ A `Chain` is a directed graph you build with `add_node` and `connect`; the execu
 
 ```signature
 fastaiagent.Chain(name, state_schema=, checkpoint_enabled=, checkpointer=, strict_routing=, middleware=)
-fastaiagent.Chain.add_node(id, agent=, tool=, type=, name=, node=, output_key=, input_schema=, output_schema=, **config)
+fastaiagent.Chain.add_node(id, agent=, tool=, type=, name=, node=, output_key=, input_schema=, output_schema=, input=, **config)
 fastaiagent.Chain.connect(source, target, condition=, max_iterations=, exit_condition=, label=)
 fastaiagent.Chain.validate()
 fastaiagent.Chain.execute(initial_state=, trace=, context=, **kwargs)
@@ -915,6 +968,7 @@ fastaiagent.Chain.cancel(execution_id)
 ```
 
 - Node type is inferred: `agent=` -> agent node, `tool=` or `node=` -> tool node. Others need `type=NodeType.<condition|transformer|parallel|hitl|start|end>` (import `NodeType` from `fastaiagent.chain`).
+- **What an agent node is given.** By default, the chain's input (the state at the start of the pass, as text), NOT the previous node's output: in `draft -> review` with no `input=`, `review` is handed the original message, never the draft. When an agent should work on an earlier node's output, pass `input=` (1.105.0), a template: `chain.add_node("review", agent=reviewer, input="Review this draft:\n{{node_results.draft.output}}")`. It can read `{{node_results.<node>.output}}`, `{{state.<key>}}` and `{{input.<key>}}`, and is re-rendered on every loop pass. Use it only on the nodes that need it; an agent that answers the user's request keeps the default. An input that renders empty raises `ChainError` before the agent is called; `validate()` reports a misspelled node name. Tool nodes read earlier results with `input_mapping=`, transformers with `template=`; `input=` is for agent nodes only.
 - A node with nothing to run FAILS the run (`ChainError`) and `validate()` reports it. Do call `chain.validate()` (returns a list of error strings; `[]` is valid) before running.
 - `Chain` checkpoints by default (`checkpoint_enabled=True`) into a local SQLite store. Do pass `checkpoint_enabled=False` in unit tests so nothing is written.
 - `ChainResult`: `output`, `final_state`, `node_results`, `execution_id`, `status` (`completed|paused|rejected|cancelled`), `pending_interrupt`, `trace_id`. For an agent node, `node_results[id]` and `output` are dicts shaped `{"output": ..., "tool_calls": [...]}` — read `["output"]` for the text (the docs print the dict).
@@ -954,7 +1008,21 @@ assert typed.execute({"text": "hi"}).final_state["shouted"] == "HI"
 ### Typed nodes, cycles, decision nodes, approval gates (brief)
 
 - `@node(output_key=, output_schema=, validate_input=)` turns a function into a tool node; its type hints become `input_schema`. Templates render as STRINGS, so an `int` parameter fed from `{{state.n}}` fails input validation — type it `str` and convert inside.
-- Cycle: `chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality >= 0.8")`. A cyclic edge without `max_iterations` fails `validate()`; exceeding it raises `ChainCycleError`.
+- Loop (retry until good, at most N times): a node drafts, a node checks, and the edge that goes
+  back is marked. The check can be a tool node (a rule in code) or an agent given
+  `input="{{node_results.draft.output}}"` (a model's judgement).
+  `chain.connect("check", "draft", max_iterations=3, exit_condition="{{node_results.check.output}} startswith PASS")`.
+  The loop body runs at most `max_iterations` times (10 when only `exit_condition` is given), then
+  raises `ChainCycleError` (`fastaiagent._internal.errors`). On a second pass the drafting agent's
+  input holds the check's last output, so have the check return what to fix and tell the agent in
+  its system prompt to follow it. A node after the loop (`chain.connect("check", "publish")`) runs
+  once, after the last pass. Chain middleware applies on every pass. Working example:
+  `examples/02_chain_with_cycles.py` in the SDK repository. Do NOT write your own attempt counter or cap middleware: the edge is the cap (it
+  was not enforced before 1.105.0, when a loop that never exited ran about 980 passes).
+- Exit and routing conditions are templates: `{{state.quality}} >= 0.8`, never the bare
+  `quality >= 0.8`, which compares the literal word and is never true. An edge that goes back
+  with neither `max_iterations` nor `exit_condition` is not a loop and is never followed;
+  `validate()` reports it.
 - Decision node (needs a Decisions endpoint at run time): `chain.add_node("triage", type=NodeType.condition, decision=Choice(instructions=..., options={...}))` with `from fastaiagent.llm import Choice`, then one `connect(..., label=<option>)` per option plus an unlabelled default edge (taken on refusal or low confidence). Its `llm=` takes shareable kwargs only; an `api_key` raises at `add_node`.
 - Approval: inside any node call `interrupt(reason, context)` (`from fastaiagent import interrupt, Resume`); `execute` returns `status="paused"`, and later `await chain.resume(execution_id, resume_value=Resume(approved=True))`. Pass your own `execution_id=` to `aexecute` so you can find it. `NodeType.hitl` with `hitl_handler=` is the blocking, in-process variant. A rejected gate gives `status="rejected"` and stops the chain.
 - Nodes may re-run on resume; make side-effecting nodes idempotent (`@idempotent`, see `docs/chains/idempotency.md` in the repo).
@@ -1531,10 +1599,14 @@ finally:
 - **Do not copy them into code.** Do not rebuild a plane rule locally or pass the result of
   `plane_guardrails_for_agent` into `guardrails=[...]`. Plane rules are never pushed back with the
   agent's definition.
-- **Testing.** An offline test with `TestModel` sees no plane rules, and a test that passes a local
-  guardrail (`no_pii()`, a regex) in their place tests that guardrail, not the plane's. Put the
-  test that proves a plane rule fires in `tests/e2e/`, marked `e2e`, skipped when
-  `FASTAIAGENT_TARGET` is not set, and do not add a `guardrails=` parameter only to fake it.
+- **Testing.** Two tests, two different questions.
+  *How does my app behave when a plane rule blocks?* Offline, with
+  `fastaiagent.testing.plane_rules([...])` (1.105.0; `references/testing.md`): the rules go through
+  the same cache and builder as the real policy. Do not write to `_connection.policy_cache`, pass
+  a local guardrail (`no_pii()`, a regex) in their place, or add a `guardrails=` parameter to fake it.
+  *Does my platform's rule reach this agent and fire?* Only a connected test answers that: in
+  `tests/e2e/`, marked `e2e`, skipped when `FASTAIAGENT_TARGET` is not set. A passing
+  `plane_rules` test is not proof that the platform enforces anything.
 - **Evidence.** Each check is a guardrail span on the run's trace, which reaches the plane with the
   trace. The plane's own guardrail views are read in the console, not through the SDK.
 - SDK-only: `action="reask"`, `guardrail_context`, `timeout_seconds` and the regex ReDoS bound, and `code` rules via `fn=`.
@@ -1675,6 +1747,15 @@ gate(results, *, fail_under=None, max_error_rate=None) -> GateReport
 - `overall.avg_score` is not a metric: it raises `EvalError`.
 
 A run is `invalid` (not `failed`) when `max_error_rate` is exceeded, nothing was scored, a gated scorer errored on some cases and `max_error_rate` is unset or exceeded, or a gated named scorer applied to no case. `invalid` outranks `failed`. A threshold naming a scorer the run did not produce **fails**, so a typo never greens a build. Do set `max_error_rate` whenever any scorer is an LLM judge or the dataset can trigger approvals. Don't gate on one run when the agent is stochastic and the dataset is small: a single run can pass or fail on the model's luck.
+
+**The scorers and the pass bar are the user's decision, not yours.** Two assistants given the same
+dataset gated it on `contains` at 1.0 and on `contains` at 0.8 with `exact_match` ungated: the
+same agent, two different verdicts. Use the scorer and threshold the user named; else what the
+project already uses (an existing eval, `pytest` options, CI config); else ask. If you cannot ask,
+pick the strictest scorer that fits the expected answers (`exact_match` for exact strings,
+`contains` for a required phrase, an `LLMJudge` for free text), gate on every scorer you report,
+and say in your summary which scorers and thresholds you chose and that they were your choice.
+Never lower a threshold or drop a scorer to turn a failing gate green.
 
 **What an offline eval proves.** With `TestModel` or `FunctionModel` the agent's answers are
 scripted, so a gate over them proves the wiring (the dataset loads, the scorer runs, the gate
