@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6413,10 +6413,10 @@
 <li><strong><code>search()</code></strong> runs vector, keyword or hybrid (the default) and returns <code>SearchResult(chunk, score)</code>. <strong><code>as_tool()</code></strong> wraps it as a tool the model calls, and every search leaves a <code>retrieval.&lt;kb&gt;</code> span.</li>
 </ul>
 <p>You declare all of it on one object:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support-kb"</span><span class="p">)</span>                 <span class="c1"># FAISS + BM25 + SQLite under .fastaiagent/kb/support-kb/</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"docs/"</span><span class="p">)</span>                                  <span class="c1"># .md, .txt, .pdf — chunked, embedded, stored</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"ERR-4012"</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>                   <span class="c1"># hybrid: meaning and exact tokens</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support-bot"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">kb</span><span class="o">.</span><span class="n">as_tool</span><span class="p">()])</span>   <span class="c1"># the model decides when to search</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support-kb&quot;</span><span class="p">)</span>                 <span class="c1"># FAISS + BM25 + SQLite under .fastaiagent/kb/support-kb/</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;docs/&quot;</span><span class="p">)</span>                                  <span class="c1"># .md, .txt, .pdf — chunked, embedded, stored</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;ERR-4012&quot;</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>                   <span class="c1"># hybrid: meaning and exact tokens</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support-bot&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">kb</span><span class="o">.</span><span class="n">as_tool</span><span class="p">()])</span>   <span class="c1"># the model decides when to search</span>
 </code></pre></div>
 <p>The rest of this page is what that object has to get right.</p>
 <p><strong>Code:</strong> <code>LocalKB</code> is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/local.py"><code>kb/local.py</code></a>; the three store contracts are <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/protocols.py"><code>kb/protocols.py</code></a>; the defaults are under <a href="https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/fastaiagent/kb/backends"><code>kb/backends/</code></a>. The RAG agent end to end is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/06_rag_agent.py"><code>examples/06_rag_agent.py</code></a>.</p>
@@ -6434,25 +6434,25 @@
 </ul>
 <p>Proof 1 chunks a three-paragraph policy at 512, then at 120 without and with overlap, and measures what neighbours share:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>chunk_size=512, overlap=50 → 1 chunk(s)
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  #0 [  0-428] 'Refund policy. Items can be sent back within 30 days of purcha'…
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  #0 [  0-428] &#39;Refund policy. Items can be sent back within 30 days of purcha&#39;…
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>chunk_size=120, overlap=0 → 5 chunk(s)
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  #0 [  0- 82] 'Refund policy. Items can be sent back within 30 days of purcha'…
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  #1 [ 84-164] 'They must be unused and in their original packaging. Digital p'…
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  #0 [  0- 82] &#39;Refund policy. Items can be sent back within 30 days of purcha&#39;…
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  #1 [ 84-164] &#39;They must be unused and in their original packaging. Digital p&#39;…
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  …
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  characters shared between neighbours: [-2, -2, -2, -2]
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>chunk_size=120, overlap=50 → 8 chunk(s)
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  #0 [  0- 82] 'Refund policy. Items can be sent back within 30 days of purcha'…
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  #1 [ 38-135] 'within 30 days of purchase for a full refund. They must be unu'…
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  #2 [ 89-164] 'must be unused and in their original packaging. Digital produc'…
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  #3 [137-217] 'Digital products are final.\n\nShipping. Domestic orders ship in'…
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  #0 [  0- 82] &#39;Refund policy. Items can be sent back within 30 days of purcha&#39;…
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  #1 [ 38-135] &#39;within 30 days of purchase for a full refund. They must be unu&#39;…
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  #2 [ 89-164] &#39;must be unused and in their original packaging. Digital produc&#39;…
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  #3 [137-217] &#39;Digital products are final.\n\nShipping. Domestic orders ship in&#39;…
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>  …
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>  characters shared between neighbours: [44, 46, 27, 41, 44, 43, 47]
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>  metadata on every chunk: {'source': 'policy.md'}
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>  metadata on every chunk: {&#39;source&#39;: &#39;policy.md&#39;}
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>overlap=0: '30 days … full refund' + 'unused … original packaging' together in chunk(s) []
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>overlap=50: '30 days … full refund' + 'unused … original packaging' together in chunk(s) [1]
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>overlap=0: &#39;30 days … full refund&#39; + &#39;unused … original packaging&#39; together in chunk(s) []
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>overlap=50: &#39;30 days … full refund&#39; + &#39;unused … original packaging&#39; together in chunk(s) [1]
 <a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>offsets exact: True · every chunk ≤ 120: True
 </code></pre></div>
 <p>Without overlap the refund rule is split at a sentence seam, and a query that needs both halves gets one. With it, chunk 1 begins mid-sentence at a word, carries the whole rule, and still fits in 120 characters.</p>
@@ -6476,10 +6476,10 @@
 </ul>
 <p>Proof 2 runs the same two queries through the local 384-dimension FastEmbed model and the fallback embedder, then reopens the index:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>── two queries, two embedders
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>FastEmbed (bge-small, 384-d)   'can I get my money back?'               → [0.710] Items can be sent back within 30 days of pur…
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>FastEmbed (bge-small, 384-d)   'how long is the reimbursement window?'  → [0.657] Support hours are Monday to Friday, 9am to 5…
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>SimpleEmbedder (char counts)   'can I get my money back?'               → [0.826] Items can be sent back within 30 days of pur…
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>SimpleEmbedder (char counts)   'how long is the reimbursement window?'  → [0.803] Error code ERR-4012 means the payment gatewa…
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>FastEmbed (bge-small, 384-d)   &#39;can I get my money back?&#39;               → [0.710] Items can be sent back within 30 days of pur…
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>FastEmbed (bge-small, 384-d)   &#39;how long is the reimbursement window?&#39;  → [0.657] Support hours are Monday to Friday, 9am to 5…
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>SimpleEmbedder (char counts)   &#39;can I get my money back?&#39;               → [0.826] Items can be sent back within 30 days of pur…
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>SimpleEmbedder (char counts)   &#39;how long is the reimbursement window?&#39;  → [0.803] Error code ERR-4012 means the payment gatewa…
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>── the embedder is part of the index
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>indexing 4 documents embedded 4 texts
@@ -6502,15 +6502,15 @@
 <li><strong>When one side returns nothing, hybrid hands the other side back unnormalized.</strong> A query with no lexical overlap returns raw cosines, the same numbers <code>search_type="vector"</code> gives.</li>
 </ul>
 <p>Proof 3 sends three queries through all three modes over the same five chunks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>── an exact code: 'ERR-4012'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>── an exact code: &#39;ERR-4012&#39;
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  vector   [0.806] Error code ERR-4012 means the paym… | [0.701] Error code ERR-5001 means authenti…
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  keyword  [2.121] Error code ERR-4012 means the paym… | [0.916] Error code ERR-5001 means authenti…
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  hybrid   [1.000] Error code ERR-4012 means the paym… | [0.511] Error code ERR-5001 means authenti…
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>── meaning, no shared words: 'reimbursement timeframe?'
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>── meaning, no shared words: &#39;reimbursement timeframe?&#39;
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  vector   [0.681] Support hours are Monday to Friday… | [0.669] Items can be sent back within 30 d…
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  keyword  (nothing)
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  hybrid   [0.681] Support hours are Monday to Friday… | [0.669] Items can be sent back within 30 d…
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>── both at once: 'ERR-4012 payment failed'
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>── both at once: &#39;ERR-4012 payment failed&#39;
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>  vector   [0.880] Error code ERR-4012 means the paym… | [0.698] Error code ERR-5001 means authenti…
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>  keyword  [3.421] Error code ERR-4012 means the paym… | [2.367] Error code ERR-5001 means authenti…
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>  hybrid   [1.000] Error code ERR-4012 means the paym… | [0.409] Error code ERR-5001 means authenti…
@@ -6539,19 +6539,19 @@
 </ul>
 <p>Proof 4 gives a support agent on <code>gpt-4.1-mini</code> the tool and asks about an error code:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>── the tool the model sees
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>name='search_support-kb' origin='kb' description="Search the 'support-kb' knowledge base"
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>name=&#39;search_support-kb&#39; origin=&#39;kb&#39; description=&quot;Search the &#39;support-kb&#39; knowledge base&quot;
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>── what happened, from the spans
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>tool.search_support-kb: tool.name='search_support-kb'
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>tool.search_support-kb: tool.origin='kb'
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>tool.search_support-kb: tool.args='{"query": "ERR-4012 checkout"}'
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>tool.search_support-kb: tool.result='[Score: 0.700] Error code ERR-4012 means the payment gateway timed out. Retry after 30 seconds, then contact support wit'…
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>retrieval span: {"kb_name": "support-kb", "backend": "faiss", "top_k": 5, "search_type": "hybrid", "query": "ERR-4012 checkout", "latency_ms": 8, "result_count": 3, "doc_ids": "[\"a0516448-…\", \"8fdb5101-…\", \"e62aff41-…\"]"}
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>tool.search_support-kb: tool.name=&#39;search_support-kb&#39;
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>tool.search_support-kb: tool.origin=&#39;kb&#39;
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>tool.search_support-kb: tool.args=&#39;{&quot;query&quot;: &quot;ERR-4012 checkout&quot;}&#39;
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>tool.search_support-kb: tool.result=&#39;[Score: 0.700] Error code ERR-4012 means the payment gateway timed out. Retry after 30 seconds, then contact support wit&#39;…
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>retrieval span: {&quot;kb_name&quot;: &quot;support-kb&quot;, &quot;backend&quot;: &quot;faiss&quot;, &quot;top_k&quot;: 5, &quot;search_type&quot;: &quot;hybrid&quot;, &quot;query&quot;: &quot;ERR-4012 checkout&quot;, &quot;latency_ms&quot;: 8, &quot;result_count&quot;: 3, &quot;doc_ids&quot;: &quot;[\&quot;a0516448-…\&quot;, \&quot;8fdb5101-…\&quot;, \&quot;e62aff41-…\&quot;]&quot;}
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>answer: The error code ERR-4012 means the payment gateway timed out. You should retry the checkout after 30 seconds. If the problem persists, contact support with the t…
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>── the export policy, with FASTAIAGENT_TRACE_PAYLOADS=0
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>kept   : ['retrieval.backend', 'retrieval.kb_name', 'retrieval.latency_ms', 'retrieval.result_count', 'retrieval.search_type', 'retrieval.top_k']
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>dropped: ['retrieval.doc_ids', 'retrieval.query']
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>kept   : [&#39;retrieval.backend&#39;, &#39;retrieval.kb_name&#39;, &#39;retrieval.latency_ms&#39;, &#39;retrieval.result_count&#39;, &#39;retrieval.search_type&#39;, &#39;retrieval.top_k&#39;]
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>dropped: [&#39;retrieval.doc_ids&#39;, &#39;retrieval.query&#39;]
 </code></pre></div>
 <p>The user asked "My checkout shows ERR-4012. What do I do?"; the model searched for <code>ERR-4012 checkout</code>. That is the query the KB scored, and it is the query in the trace. The Knowledge Bases browser reads those spans:</p>
 <p><img alt="The KB browser's Lineage tab: three retrievals across one agent, and the recent traces that touched this KB" src="../../ui/screenshots/19-kb-lineage.png" />
@@ -6571,7 +6571,7 @@
 </ul>
 <p>Proof 5 writes in one process, reads and deletes in a second, and reads again in a third, counting every text the embedder was asked for:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>── process A writes
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>chunks=3 embedded_texts=3 files=['kb.sqlite', 'kb.sqlite-shm', 'kb.sqlite-wal']
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>chunks=3 embedded_texts=3 files=[&#39;kb.sqlite&#39;, &#39;kb.sqlite-shm&#39;, &#39;kb.sqlite-wal&#39;]
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>── process B reads, then deletes a source
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>chunks=3 embedded_on_open=1 (the probe) embedded_by_search=1 top=[0.700] Items can be sent back within 30 days …
@@ -6581,7 +6581,7 @@
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>chunks=2 embedded_on_open=1 (the probe) embedded_by_search=1 top=[0.700] Items can be sent back within 30 days …
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>── persist=False
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>on disk: ['policies']
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>on disk: [&#39;policies&#39;]
 </code></pre></div>
 <p>Three chunks cost three embeddings once. Every process after that paid one probe and one per query. The scratch KB left nothing on disk beside the persisted one.</p>
 <p><strong>Code:</strong> <code>_load_from_metadata</code>, <code>delete_by_source</code> and <code>_rebuild_indexes_after_delete</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/local.py"><code>kb/local.py</code></a>; the file is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/backends/sqlite.py"><code>kb/backends/sqlite.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/kb/proofs/proof_5_restart.py"><code>proof_5_restart.py</code></a>; <code>test_localkb_persists_across_reopen</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_kb_backend_defaults.py"><code>tests/test_kb_backend_defaults.py</code></a> pins the reopen.</p>
@@ -6598,9 +6598,9 @@
 </ul>
 <p>Proof 6 runs the three-vector contract and then the same lifecycle on each backend, FAISS and Chroma in-process and Qdrant in-memory:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>── the score contract: one stored vector, three queries
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  faiss   {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  chroma  {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  qdrant  {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  faiss   {&#39;same&#39;: 1.0, &#39;orthogonal&#39;: 0.0, &#39;opposite&#39;: -1.0, &#39;cos=0.6&#39;: 0.6}
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  chroma  {&#39;same&#39;: 1.0, &#39;orthogonal&#39;: 0.0, &#39;opposite&#39;: -1.0, &#39;cos=0.6&#39;: 0.6}
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  qdrant  {&#39;same&#39;: 1.0, &#39;orthogonal&#39;: 0.0, &#39;opposite&#39;: -1.0, &#39;cos=0.6&#39;: 0.6}
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>── the same LocalKB lifecycle over each backend, FastEmbed vectors as they come
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  (FastEmbed returns numpy.float32 values inside Python lists)
@@ -6715,10 +6715,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6375,26 +6375,26 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">_FIXTURE</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"fixtures"</span> <span class="o">/</span> <span class="s2">"apple_10k_fy2025_excerpts.txt"</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">_FIXTURE</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;fixtures&quot;</span> <span class="o">/</span> <span class="s2">&quot;apple_10k_fy2025_excerpts.txt&quot;</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">_DOC</span> <span class="o">=</span> <span class="n">_FIXTURE</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nd">@fa</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">search_filing</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="sd">"""Drop-in replacement for web_search — returns paragraphs from the 10-K</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="sd">    whose tokens overlap with the query."""</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">q</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">",.;:()$"</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">query</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">}</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">scored</span> <span class="o">=</span> <span class="p">[(</span><span class="nb">len</span><span class="p">(</span><span class="n">q</span> <span class="o">&amp;</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">",.;:()$"</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">split</span><span class="p">()}),</span> <span class="n">p</span><span class="p">)</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>              <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">_DOC</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Drop-in replacement for web_search — returns paragraphs from the 10-K</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="sd">    whose tokens overlap with the query.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">q</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;,.;:()$&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">query</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">}</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">scored</span> <span class="o">=</span> <span class="p">[(</span><span class="nb">len</span><span class="p">(</span><span class="n">q</span> <span class="o">&amp;</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;,.;:()$&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">split</span><span class="p">()}),</span> <span class="n">p</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>              <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">_DOC</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="k">return</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">--- next match ---</span><span class="se">\n\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">ov</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span> <span class="k">if</span> <span class="n">ov</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">--- next match ---</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">ov</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span> <span class="k">if</span> <span class="n">ov</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
 </code></pre></div>
 <p>Researchers reuse the prompt and structured output type from the existing <code>topology.py</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">topology</span><span class="w"> </span><span class="kn">import</span> <span class="n">researcher_prompt</span><span class="p">,</span> <span class="n">ResearchFindings</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">"researcher:</span><span class="si">{</span><span class="n">subtopic</span><span class="p">[:</span><span class="mi">40</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;researcher:</span><span class="si">{</span><span class="n">subtopic</span><span class="p">[:</span><span class="mi">40</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="n">researcher_prompt</span><span class="p">(</span><span class="n">subtopic</span><span class="p">,</span> <span class="n">rationale</span><span class="p">),</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">),</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">),</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">search_filing</span><span class="p">],</span>                          <span class="c1"># ← only line that changes</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">middleware</span><span class="o">=</span><span class="p">[</span><span class="n">ToolBudget</span><span class="p">(</span><span class="n">max_calls</span><span class="o">=</span><span class="mi">15</span><span class="p">)],</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">AgentConfig</span><span class="p">(</span><span class="n">max_iterations</span><span class="o">=</span><span class="mi">20</span><span class="p">),</span>
@@ -6404,14 +6404,14 @@
 <p>Scope and Writer agents are imported as-is from <code>topology.py</code>. The session span is stamped with <code>set_template_kind(span, "financial-extraction")</code> so this trace shows up under a different template kind from the headline <code>deep-research</code> runs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.trace.span</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_template_kind</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">with</span> <span class="n">trace_context</span><span class="p">(</span><span class="s2">"deep_research.session"</span><span class="p">)</span> <span class="k">as</span> <span class="n">session_span</span><span class="p">:</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">set_template_kind</span><span class="p">(</span><span class="n">session_span</span><span class="p">,</span> <span class="s2">"financial-extraction"</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">with</span> <span class="n">trace_context</span><span class="p">(</span><span class="s2">&quot;deep_research.session&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">session_span</span><span class="p">:</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">set_template_kind</span><span class="p">(</span><span class="n">session_span</span><span class="p">,</span> <span class="s2">&quot;financial-extraction&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="o">...</span>
 </code></pre></div>
 <h2 id="setting-up-the-fixture">Setting up the fixture<a class="headerlink" href="#setting-up-the-fixture" title="Permanent link">&para;</a></h2>
 <p>The 10-K excerpts were downloaded from SEC EDGAR ahead of time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-A<span class="w"> </span><span class="s2">"your-name your-email@example.com"</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="s2">"https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-A<span class="w"> </span><span class="s2">&quot;your-name your-email@example.com&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="s2">&quot;https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>&gt;<span class="w"> </span>raw_10k.htm
 </code></pre></div>
 <p>A short Python script then strips the XBRL HTML to plain text and slices the four canonical sections (income statement, balance sheet, cash flow, human capital) into <code>fixtures/apple_10k_fy2025_excerpts.txt</code> (~12 KB). The full extraction script is reproducible from the <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/deep-research-agent/financial_demo.py">demo file</a>.</p>
@@ -6423,10 +6423,10 @@
 <p>Cost: ~$0.30 per run on <code>gpt-4o</code> (writer + scope) plus <code>gpt-4o-mini</code> (4 parallel researchers).</p>
 <h2 id="captured-output-real-run-real-llm">Captured output (real run, real LLM)<a class="headerlink" href="#captured-output-real-run-real-llm" title="Permanent link">&para;</a></h2>
 <p>Below is the actual report the pipeline produced on a clean run against the bundled fixture. It captures <strong>10 of the 12 target attributes</strong>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gh"># Extract Key Financial Attributes from Apple Inc.'s FY2025 10-K Filing</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gh"># Extract Key Financial Attributes from Apple Inc.&#39;s FY2025 10-K Filing</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="gu">## Summary</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>Apple Inc.'s fiscal year 2025 10-K filing reveals significant financial
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>Apple Inc.&#39;s fiscal year 2025 10-K filing reveals significant financial
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>metrics, including a notable revenue of $416.161 billion and a net income
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>of $112.01 billion, reflecting robust operational performance. The company
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>has improved its balance sheet position with increased cash and cash
@@ -6435,7 +6435,7 @@
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="gu">## Findings</span>
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="gu">### Income Statement Metrics</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>The income statement metrics provide a comprehensive view of Apple's
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>The income statement metrics provide a comprehensive view of Apple&#39;s
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>financial performance for FY2025. Apple generated total net sales of
 <a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>$416.161 billion, with a gross margin of $195.201 billion [1]. Operating
 <a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>income was reported at $133.05 billion, while net income totaled $112.01
@@ -6443,13 +6443,13 @@
 <a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
 <a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="gu">### Balance Sheet Metrics</span>
 <a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>The balance sheet for FY2025 reveals total assets of $359.241 billion [2].
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>Total liabilities decreased to $285.508 billion [2]. The company's cash and
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>cash equivalents rose to $35.934 billion [2]. Shareholders' equity was
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>Total liabilities decreased to $285.508 billion [2]. The company&#39;s cash and
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>cash equivalents rose to $35.934 billion [2]. Shareholders&#39; equity was
 <a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>$73.733 billion [2].
 <a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>
 <a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="gu">### Human-Capital and Operational Data</span>
 <a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>In 2025, Apple reported approximately 166,000 full-time equivalent
-<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>employees [3]. Apple's expenditure on research and development reached
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>employees [3]. Apple&#39;s expenditure on research and development reached
 <a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>$34,550 million, reflecting its strategic focus on innovation [4].
 <a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>
 <a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="gu">## Sources</span>
@@ -6572,17 +6572,17 @@
 </ol>
 <h2 id="trace-shape-live-queryable">Trace shape (live, queryable)<a class="headerlink" href="#trace-shape-live-queryable" title="Permanent link">&para;</a></h2>
 <p>The session span carries <code>fastaiagent.template.kind = "financial-extraction"</code> so the local UI distinguishes these from generic deep-research traces:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">trace_id</span><span class="p">,</span><span class="w"> </span><span class="n">json_extract</span><span class="p">(</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$.fastaiagent.research.topic'</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">topic</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">trace_id</span><span class="p">,</span><span class="w"> </span><span class="n">json_extract</span><span class="p">(</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.fastaiagent.research.topic&#39;</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">topic</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">FROM</span><span class="w"> </span><span class="n">spans</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">json_extract</span><span class="p">(</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$.fastaiagent.template.kind'</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'financial-extraction'</span><span class="p">;</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">json_extract</span><span class="p">(</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.fastaiagent.template.kind&#39;</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;financial-extraction&#39;</span><span class="p">;</span>
 </code></pre></div>
 <p>Or via the REST API while <code>fastaiagent ui</code> is running:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://127.0.0.1:7843/api/traces?last_hours=24'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'.rows[] | select(.name == "deep_research.session")'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">&#39;http://127.0.0.1:7843/api/traces?last_hours=24&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.rows[] | select(.name == &quot;deep_research.session&quot;)&#39;</span>
 </code></pre></div>
 <p>The trace below was captured from the run that produced the report above:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>deep_research.session             template.kind="financial-extraction"
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>                                  topic="Apple Inc FY2025 financial snapshot"
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>deep_research.session             template.kind=&quot;financial-extraction&quot;
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>                                  topic=&quot;Apple Inc FY2025 financial snapshot&quot;
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  ├── deep_research.scope         (ResearchBrief: 4 subtopics)
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  ├── deep_research.research × 4  Income Statement Metrics
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  │                               Balance Sheet Metrics
@@ -6658,10 +6658,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

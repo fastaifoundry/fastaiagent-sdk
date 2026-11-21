@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6298,43 +6298,43 @@ HTTP — just <code>Chain</code> + <code>interrupt()</code> + <code>chain.aresum
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">approve_refund</span><span class="p">(</span><span class="n">amount</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="sd">"""High-value refunds suspend for human approval."""</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;High-value refunds suspend for human approval.&quot;&quot;&quot;</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">10_000</span><span class="p">:</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        <span class="n">decision</span> <span class="o">=</span> <span class="n">interrupt</span><span class="p">(</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>            <span class="n">reason</span><span class="o">=</span><span class="s2">"manager_approval"</span><span class="p">,</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>            <span class="n">context</span><span class="o">=</span><span class="p">{</span><span class="s2">"amount"</span><span class="p">:</span> <span class="n">n</span><span class="p">},</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;manager_approval&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>            <span class="n">context</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;amount&quot;</span><span class="p">:</span> <span class="n">n</span><span class="p">},</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        <span class="p">)</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        <span class="k">return</span> <span class="p">{</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>            <span class="s2">"approved"</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">approved</span><span class="p">,</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>            <span class="s2">"approver"</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"approver"</span><span class="p">),</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>            <span class="s2">&quot;approved&quot;</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">approved</span><span class="p">,</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>            <span class="s2">&quot;approver&quot;</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;approver&quot;</span><span class="p">),</span>
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        <span class="p">}</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">"approved"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">"auto"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;approved&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
 <a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>
 <a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="k">def</span><span class="w"> </span><span class="nf">issue_refund</span><span class="p">(</span><span class="n">approved</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="sd">"""No-op terminal node; in production this would call a payments API."""</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">"refund_issued"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">approved</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"true"</span><span class="p">}</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;No-op terminal node; in production this would call a payments API.&quot;&quot;&quot;</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;refund_issued&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">approved</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;true&quot;</span><span class="p">}</span>
 <a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
 <a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>
 <a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="k">def</span><span class="w"> </span><span class="nf">build_chain</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Chain</span><span class="p">:</span>
 <a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>    <span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>        <span class="s2">"refund-flow"</span><span class="p">,</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>        <span class="s2">&quot;refund-flow&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>        <span class="n">checkpointer</span><span class="o">=</span><span class="n">SQLiteCheckpointer</span><span class="p">(),</span>  <span class="c1"># writes to ./.fastaiagent/local.db</span>
 <a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>    <span class="p">)</span>
 <a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
-<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>        <span class="s2">"approve"</span><span class="p">,</span>
-<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>        <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"approve_tool"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">approve_refund</span><span class="p">),</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>        <span class="s2">&quot;approve&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>        <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;approve_tool&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">approve_refund</span><span class="p">),</span>
 <a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>        <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">tool</span><span class="p">,</span>
-<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>        <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"amount"</span><span class="p">:</span> <span class="s2">"{{state.amount}}"</span><span class="p">},</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>        <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;amount&quot;</span><span class="p">:</span> <span class="s2">&quot;{{state.amount}}&quot;</span><span class="p">},</span>
 <a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>    <span class="p">)</span>
 <a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
-<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>        <span class="s2">"issue"</span><span class="p">,</span>
-<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>        <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"issue_tool"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">issue_refund</span><span class="p">),</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>        <span class="s2">&quot;issue&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>        <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;issue_tool&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">issue_refund</span><span class="p">),</span>
 <a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a>        <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">tool</span><span class="p">,</span>
-<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>        <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"approved"</span><span class="p">:</span> <span class="s2">"{{state.output.approved}}"</span><span class="p">},</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>        <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;approved&quot;</span><span class="p">:</span> <span class="s2">&quot;{{state.output.approved}}&quot;</span><span class="p">},</span>
 <a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>    <span class="p">)</span>
-<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"approve"</span><span class="p">,</span> <span class="s2">"issue"</span><span class="p">)</span>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;approve&quot;</span><span class="p">,</span> <span class="s2">&quot;issue&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a>    <span class="k">return</span> <span class="n">chain</span>
 </code></pre></div>
 <h2 id="3-run-and-watch-it-pause">3. Run — and watch it pause<a class="headerlink" href="#3-run-and-watch-it-pause" title="Permanent link">&para;</a></h2>
@@ -6342,10 +6342,10 @@ HTTP — just <code>Chain</code> + <code>interrupt()</code> + <code>chain.aresum
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">refund</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_chain</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">build_chain</span><span class="p">()</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"amount"</span><span class="p">:</span> <span class="mi">50_000</span><span class="p">},</span> <span class="n">execution_id</span><span class="o">=</span><span class="s2">"refund-abc"</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;amount&quot;</span><span class="p">:</span> <span class="mi">50_000</span><span class="p">},</span> <span class="n">execution_id</span><span class="o">=</span><span class="s2">&quot;refund-abc&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>            <span class="c1"># "paused"</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">pending_interrupt</span><span class="p">)</span> <span class="c1"># {"reason": "manager_approval", "context": {"amount": 50000}, ...}</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>            <span class="c1"># &quot;paused&quot;</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">pending_interrupt</span><span class="p">)</span> <span class="c1"># {&quot;reason&quot;: &quot;manager_approval&quot;, &quot;context&quot;: {&quot;amount&quot;: 50000}, ...}</span>
 </code></pre></div>
 <p>The Python process can exit now. The pause checkpoint and the
 <code>pending_interrupts</code> row are committed.</p>
@@ -6357,12 +6357,12 @@ HTTP — just <code>Chain</code> + <code>interrupt()</code> + <code>chain.aresum
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">build_chain</span><span class="p">()</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">run_sync</span><span class="p">(</span><span class="n">chain</span><span class="o">.</span><span class="n">aresume</span><span class="p">(</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="s2">"refund-abc"</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">resume_value</span><span class="o">=</span><span class="n">Resume</span><span class="p">(</span><span class="n">approved</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"approver"</span><span class="p">:</span> <span class="s2">"alice"</span><span class="p">}),</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="s2">&quot;refund-abc&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">resume_value</span><span class="o">=</span><span class="n">Resume</span><span class="p">(</span><span class="n">approved</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;approver&quot;</span><span class="p">:</span> <span class="s2">&quot;alice&quot;</span><span class="p">}),</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">))</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>                              <span class="c1"># "completed"</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">final_state</span><span class="p">[</span><span class="s2">"output"</span><span class="p">])</span>               <span class="c1"># {"refund_issued": True}</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>                              <span class="c1"># &quot;completed&quot;</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">final_state</span><span class="p">[</span><span class="s2">&quot;output&quot;</span><span class="p">])</span>               <span class="c1"># {&quot;refund_issued&quot;: True}</span>
 </code></pre></div>
 <p>This works whether <code>pause.py</code> is still running, exited cleanly, or was
 SIGKILLed mid-flight. The <code>Chain</code> rebuilt in <code>resume.py</code> reads the
@@ -6456,10 +6456,10 @@ against double-clicked Approve buttons.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

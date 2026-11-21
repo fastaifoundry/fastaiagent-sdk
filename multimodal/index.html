@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6126,15 +6126,15 @@ locally when the provider can parse them).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span><span class="p">,</span> <span class="n">Image</span><span class="p">,</span> <span class="n">PDF</span><span class="p">,</span> <span class="n">File</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"claims"</span><span class="p">,</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-sonnet-4-6"</span><span class="p">),</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;claims&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-6&quot;</span><span class="p">),</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="p">[</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        <span class="s2">"Compare the photo to the policy and assess the claim."</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"damage.jpg"</span><span class="p">),</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"policy.pdf"</span><span class="p">),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        <span class="s2">&quot;Compare the photo to the policy and assess the claim.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;damage.jpg&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;policy.pdf&quot;</span><span class="p">),</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="p">]</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="p">)</span>
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
@@ -6142,7 +6142,7 @@ locally when the provider can parse them).</p>
 <p>Or just hand the agent bytes / a path — the type is sniffed and wrapped in a
 <a href="files/"><code>File</code></a> automatically:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">file_bytes</span><span class="p">)</span>                       <span class="c1"># mime sniffed from the bytes</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s2">"Summarize this."</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"q3.csv"</span><span class="p">)])</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s2">&quot;Summarize this.&quot;</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;q3.csv&quot;</span><span class="p">)])</span>
 </code></pre></div>
 <h2 id="whats-supported">What's supported<a class="headerlink" href="#whats-supported" title="Permanent link">&para;</a></h2>
 <table>
@@ -6279,10 +6279,10 @@ Which file types a given provider accepts natively varies — see the
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

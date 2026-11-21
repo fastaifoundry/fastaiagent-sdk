@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6399,19 +6399,19 @@
 </ul>
 <p>You get all of it from one call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"shipping"</span><span class="p">,</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You are a shipping assistant. Use the tool to answer. One sentence."</span><span class="p">,</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4.1-mini"</span><span class="p">),</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;shipping&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You are a shipping assistant. Use the tool to answer. One sentence.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">),</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">lookup_order</span><span class="p">],</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"Where is order 1042?"</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;Where is order 1042?&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">trace</span> <span class="o">=</span> <span class="n">TraceStore</span><span class="p">()</span><span class="o">.</span><span class="n">get_trace</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">trace_id</span><span class="p">)</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">trace</span><span class="o">.</span><span class="n">spans</span><span class="p">:</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">span</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">span</span><span class="o">.</span><span class="n">parent_span_id</span><span class="p">,</span> <span class="n">span</span><span class="o">.</span><span class="n">attributes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gen_ai.usage.input_tokens"</span><span class="p">))</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">span</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">span</span><span class="o">.</span><span class="n">parent_span_id</span><span class="p">,</span> <span class="n">span</span><span class="o">.</span><span class="n">attributes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gen_ai.usage.input_tokens&quot;</span><span class="p">))</span>
 </code></pre></div>
 <p>The live run behind this page, printed as a tree:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>live run : 'Order 1042 was shipped on 12 September via DHL with tracking number 7788-2201.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>live run : &#39;Order 1042 was shipped on 12 September via DHL with tracking number 7788-2201.&#39;
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>trace    : 7803441ec8798cf352473bba099aa50e
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    agent.shipping               tokens_used=222 latency_ms=1725
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        llm.openai.gpt-4.1-mini      tokens=72+16 finish=tool_calls
@@ -6440,11 +6440,11 @@
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>      tool.lookup_alpha            runner.type=tool
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>          db.query                     runner.type=—
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>      llm.test.function-model      runner.type=—
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  answer: 'Order 1042 shipped via DHL.'
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>✓ nothing of beta's run is in alpha's trace
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  answer: &#39;Order 1042 shipped via DHL.&#39;
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>✓ nothing of beta&#39;s run is in alpha&#39;s trace
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>trace of beta: 5 flat rows, 1 parentless root (agent.beta)
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  ...
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>✓ nothing of alpha's run is in beta's trace
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>✓ nothing of alpha&#39;s run is in beta&#39;s trace
 </code></pre></div>
 <p>The span the tool opened sits under the tool. The two runs, interleaved in one event loop, came out as two clean trees.</p>
 <p><strong>Code:</strong> the provider and tracer are <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel.py"><code>trace/otel.py</code></a> (<code>get_tracer_provider</code>, <code>get_tracer</code>); the read is <code>get_trace</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/storage.py"><code>trace/storage.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/tracing/proofs/proof_tree.py"><code>proofs/proof_tree.py</code></a>.</p>
@@ -6469,16 +6469,16 @@
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    llm.test.function-model   [UNSET]
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    tool.peek                 [UNSET]
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    llm.test.function-model   [UNSET]
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>tool failed, run finished: 'Order 1042 has shipped.'
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>tool failed, run finished: &#39;Order 1042 has shipped.&#39;
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    ...
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    tool.explode              [UNSET]  tool.status=error  tool.error="Tool 'explode' failed: carrier API returned 503"
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    tool.explode              [UNSET]  tool.status=error  tool.error=&quot;Tool &#39;explode&#39; failed: carrier API returned 503&quot;
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    ...
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>model failed, run raised: provider returned 503
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    agent.shipping            [ERROR]  exception: provider returned 503
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    llm.test.function-model   [UNSET]
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    tool.peek                 [UNSET]
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>answer with an unwritable store: 'Order 1042 has shipped.'
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>warning logged once: True — fastaiagent: could not write span 'llm.test.function-model' to /nonexistent-dir/local.db (…
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>answer with an unwritable store: &#39;Order 1042 has shipped.&#39;
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>warning logged once: True — fastaiagent: could not write span &#39;llm.test.function-model&#39; to /nonexistent-dir/local.db (…
 </code></pre></div>
 <p>While the tool was running, the model call before it was already a row and the root was not yet. The crashed run left an <code>ERROR</code> root with the exception on it and the two spans that had finished. The run with no writable store still answered.</p>
 <p><strong>Code:</strong> <code>LocalStorageProcessor.on_end</code> and <code>_write</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/storage.py"><code>trace/storage.py</code></a>; the tool error path is <code>execute</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/tool/function.py"><code>tool/function.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/tracing/proofs/proof_durable.py"><code>proofs/proof_durable.py</code></a>.</p>
@@ -6497,17 +6497,17 @@
 </ul>
 <p>Proof 3 runs the same question four ways, with OpenTelemetry's <code>InMemorySpanExporter</code> registered through <code>add_exporter()</code> standing in for Datadog or Jaeger:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>default: payloads exported
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  local.db  agent.input = 'Is my card 4111 1111 1111 4242 active?'
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  exporter  agent.input = 'Is my card 4111 1111 1111 4242 active?'
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  local.db  agent.input = &#39;Is my card 4111 1111 1111 4242 active?&#39;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  exporter  agent.input = &#39;Is my card 4111 1111 1111 4242 active?&#39;
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>FASTAIAGENT_TRACE_PAYLOADS=0
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  local.db  agent.input = 'Is my card 4111 1111 1111 4242 active?'
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  exporter  agent.input = '(stripped)'
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  local.db  agent.input = &#39;Is my card 4111 1111 1111 4242 active?&#39;
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  exporter  agent.input = &#39;(stripped)&#39;
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  local.db  gen_ai.request.messages present: True
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>  exporter  gen_ai.request.messages present: False
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  exporter  gen_ai.request.model = 'function-model'
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  exporter  gen_ai.request.model = &#39;function-model&#39;
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>RedactionPolicy(card pattern)
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  local.db  agent.input = 'Is my card [CARD] active?'
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  exporter  agent.input = 'Is my card [CARD] active?'
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  local.db  agent.input = &#39;Is my card [CARD] active?&#39;
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  exporter  agent.input = &#39;Is my card [CARD] active?&#39;
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>  exporter  gen_ai.request.messages carries the card number: False
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>FASTAIAGENT_TRACE_ENABLED=0
 <a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>  trace_id on the result: None
@@ -6536,7 +6536,7 @@
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>connect() to a dead plane returned in 0.06s; is_connected=True
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>3 runs took 0.00s with the plane down
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>rows in local.db: 6   unsent: 6
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>fetch_unsynced() hands the exporter 6 spans: ['agent.support', 'llm.test.function-model']
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>fetch_unsynced() hands the exporter 6 spans: [&#39;agent.support&#39;, &#39;llm.test.function-model&#39;]
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>after marking 2 sent: unsent=4  rows=6
 </code></pre></div>
 <p>Six spans, six unsent, none lost, no run delayed. The last line is what the exporter does after a 2xx: mark exactly the spans the plane acknowledged.</p>
@@ -6553,19 +6553,19 @@
 <li><strong>The master switch wins.</strong> With tracing disabled, <code>enable_otel_capture()</code> logs and does nothing, because OTel has no way to detach a processor afterwards.</li>
 </ul>
 <p>Proof 5 emits one span through a plain OpenTelemetry tracer with the attributes OpenInference's OpenAI instrumentor sets, then runs a native agent:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>foreign (OpenInference): ['ChatCompletion']
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>foreign (OpenInference): [&#39;ChatCompletion&#39;]
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  the model-call span, ChatCompletion:
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    gen_ai.request.model         = 'gpt-4.1-mini'
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    gen_ai.request.model         = &#39;gpt-4.1-mini&#39;
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    gen_ai.usage.input_tokens    = 12
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    gen_ai.response.content      = 'Order 1042 has shipped.'
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    fastaiagent.runner.type      = 'llm'
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    fastaiagent.framework        = 'openai'
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    gen_ai.response.content      = &#39;Order 1042 has shipped.&#39;
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    fastaiagent.runner.type      = &#39;llm&#39;
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    fastaiagent.framework        = &#39;openai&#39;
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    OpenInference keys kept: True
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>native: ['agent.support', 'llm.test.function-model']
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>native: [&#39;agent.support&#39;, &#39;llm.test.function-model&#39;]
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>  the model-call span, llm.test.function-model:
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    gen_ai.request.model         = 'function-model'
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    gen_ai.response.content      = 'Order 1042 has shipped.'
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>list_traces() shows both: ['ChatCompletion', 'agent.support']
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    gen_ai.request.model         = &#39;function-model&#39;
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    gen_ai.response.content      = &#39;Order 1042 has shipped.&#39;
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>list_traces() shows both: [&#39;ChatCompletion&#39;, &#39;agent.support&#39;]
 </code></pre></div>
 <p>The foreign span came back with the canonical keys and its originals; both traces are in one list.</p>
 <p><strong>Code:</strong> <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel_capture.py"><code>trace/otel_capture.py</code></a> and <code>normalize_attributes</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/normalize.py"><code>trace/normalize.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/tracing/proofs/proof_foreign.py"><code>proofs/proof_foreign.py</code></a>; the live version, with the real instrumentor and a real OpenAI call, is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/otel-openinference/capture.py"><code>examples/otel-openinference/capture.py</code></a>, and <a href="../third-party-otel/">Capture any OTel / OpenInference framework</a> and <a href="../../integrations/frameworks/">Use fastaiagent with your existing framework</a> cover the setup.</p>
@@ -6676,10 +6676,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

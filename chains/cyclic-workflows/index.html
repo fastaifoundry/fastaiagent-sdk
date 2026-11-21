@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6386,25 +6386,25 @@ short.</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">check_length</span><span class="p">(</span><span class="n">draft</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">words</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">draft</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">if</span> <span class="n">words</span> <span class="o">&lt;=</span> <span class="mi">15</span><span class="p">:</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">"PASS (</span><span class="si">{</span><span class="n">words</span><span class="si">}</span><span class="s2"> words)"</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">"FAIL: the draft is </span><span class="si">{</span><span class="n">words</span><span class="si">}</span><span class="s2"> words; rewrite it in at most 15 words."</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;PASS (</span><span class="si">{</span><span class="n">words</span><span class="si">}</span><span class="s2"> words)&quot;</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;FAIL: the draft is </span><span class="si">{</span><span class="n">words</span><span class="si">}</span><span class="s2"> words; rewrite it in at most 15 words.&quot;</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"draft-with-check"</span><span class="p">)</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"draft"</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">drafter</span><span class="p">)</span>      <span class="c1"># an agent writes</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;draft-with-check&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;draft&quot;</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">drafter</span><span class="p">)</span>      <span class="c1"># an agent writes</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>                             <span class="c1"># a function judges the draft</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="s2">"check"</span><span class="p">,</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"check_length"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">check_length</span><span class="p">),</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"draft"</span><span class="p">:</span> <span class="s2">"{{node_results.draft.output}}"</span><span class="p">},</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="s2">&quot;check&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">tool</span><span class="o">=</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;check_length&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">check_length</span><span class="p">),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;draft&quot;</span><span class="p">:</span> <span class="s2">&quot;{{node_results.draft.output}}&quot;</span><span class="p">},</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="p">)</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"publish"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">transformer</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">"{{node_results.draft.output}}"</span><span class="p">)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;publish&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">transformer</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">&quot;{{node_results.draft.output}}&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"draft"</span><span class="p">,</span> <span class="s2">"check"</span><span class="p">)</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"check"</span><span class="p">,</span> <span class="s2">"publish"</span><span class="p">)</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;draft&quot;</span><span class="p">,</span> <span class="s2">&quot;check&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;check&quot;</span><span class="p">,</span> <span class="s2">&quot;publish&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="s2">"check"</span><span class="p">,</span> <span class="s2">"draft"</span><span class="p">,</span>                       <span class="c1"># the edge that goes back</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="s2">&quot;check&quot;</span><span class="p">,</span> <span class="s2">&quot;draft&quot;</span><span class="p">,</span>                       <span class="c1"># the edge that goes back</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="n">max_iterations</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>                       <span class="c1"># at most 3 passes through the loop</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">exit_condition</span><span class="o">=</span><span class="s2">"{{node_results.check.output}} startswith PASS"</span><span class="p">,</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">exit_condition</span><span class="o">=</span><span class="s2">&quot;{{node_results.check.output}} startswith PASS&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="p">)</span>
 </code></pre></div>
 <ol>
@@ -6435,20 +6435,20 @@ A real run of it:</p>
 <p>The check above is a function. When judging needs a model, make the judge an agent and hand it the
 draft with <code>input=</code>, and hand the drafter the last review the same way:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">"draft"</span><span class="p">,</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;draft&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">agent</span><span class="o">=</span><span class="n">drafter</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">"Topic: {{input.message}}</span><span class="se">\n</span><span class="s2">Last review: {{node_results.review.output}}"</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;Topic: {{input.message}}</span><span class="se">\n</span><span class="s2">Last review: {{node_results.review.output}}&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">)</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s2">"review"</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">agent</span><span class="o">=</span><span class="n">reviewer</span><span class="p">,</span>               <span class="c1"># answers "PASS" or "FAIL: &lt;what to fix&gt;"</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">"Review this draft:</span><span class="se">\n</span><span class="s2">{{node_results.draft.output}}"</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s2">&quot;review&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">agent</span><span class="o">=</span><span class="n">reviewer</span><span class="p">,</span>               <span class="c1"># answers &quot;PASS&quot; or &quot;FAIL: &lt;what to fix&gt;&quot;</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;Review this draft:</span><span class="se">\n</span><span class="s2">{{node_results.draft.output}}&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">)</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"draft"</span><span class="p">,</span> <span class="s2">"review"</span><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;draft&quot;</span><span class="p">,</span> <span class="s2">&quot;review&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="s2">"review"</span><span class="p">,</span> <span class="s2">"draft"</span><span class="p">,</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="s2">&quot;review&quot;</span><span class="p">,</span> <span class="s2">&quot;draft&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">max_iterations</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">exit_condition</span><span class="o">=</span><span class="s2">"{{node_results.review.output}} startswith PASS"</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">exit_condition</span><span class="o">=</span><span class="s2">&quot;{{node_results.review.output}} startswith PASS&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="p">)</span>
 </code></pre></div>
 <p>On the first pass <code>Last review:</code> is empty, because the reviewer has not run yet. The template only
@@ -6483,9 +6483,9 @@ stops the run when the whole input renders empty.</p>
 <li>Values come from <code>{{state.&lt;key&gt;}}</code>, <code>{{node_results.&lt;node&gt;.output}}</code> or <code>{{input.&lt;key&gt;}}</code>.</li>
 <li>Operators: <code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>, <code>contains</code>, <code>startswith</code>.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">"{{state.quality}} &gt;= 0.8"</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">"{{node_results.check.output}} startswith PASS"</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">"{{state.done}} == true"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">&quot;{{state.quality}} &gt;= 0.8&quot;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">&quot;{{node_results.check.output}} startswith PASS&quot;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">exit_condition</span><span class="o">=</span><span class="s2">&quot;{{state.done}} == true&quot;</span>
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">A bare word is text, not a lookup</p>
@@ -6508,7 +6508,7 @@ Earlier versions of this page showed the bare form.</p>
 </code></pre></div>
 <p><code>validate()</code> reports a loop edge whose <code>max_iterations</code> is below 1, and a loop drawn with
 ordinary edges:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Nodes ['check', 'draft'] form a loop through ordinary edges, which is never followed.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Nodes [&#39;check&#39;, &#39;draft&#39;] form a loop through ordinary edges, which is never followed.
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>Mark the edge that goes back with connect(..., max_iterations=N) (and exit_condition= to leave early).
 </code></pre></div>
 <p>An edge that goes back without <code>max_iterations</code> or <code>exit_condition</code> is not a loop: the executor
@@ -6517,10 +6517,10 @@ does not follow it. Call <code>validate()</code> before running.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent._internal.errors</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChainCycleError</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"input"</span><span class="p">:</span> <span class="s2">"data"</span><span class="p">})</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;input&quot;</span><span class="p">:</span> <span class="s2">&quot;data&quot;</span><span class="p">})</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">except</span> <span class="n">ChainCycleError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Loop limit hit: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="c1"># "Cycle 'check' -&gt; 'draft' exceeded max_iterations (3). ..."</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loop limit hit: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="c1"># &quot;Cycle &#39;check&#39; -&gt; &#39;draft&#39; exceeded max_iterations (3). ...&quot;</span>
 </code></pre></div>
 <h2 id="changed-in-11050">Changed in 1.105.0<a class="headerlink" href="#changed-in-11050" title="Permanent link">&para;</a></h2>
 <p>Four things in this page were not true before 1.105.0, in every earlier version:</p>
@@ -6603,10 +6603,10 @@ does not follow it. Call <code>validate()</code> before running.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

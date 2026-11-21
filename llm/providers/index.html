@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6457,8 +6457,8 @@ from the canonical environment variable, so this is the entire
 configuration:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"bot"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"groq"</span><span class="p">,</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                                        <span class="n">model</span><span class="o">=</span><span class="s2">"openai/gpt-oss-120b"</span><span class="p">))</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bot&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                                        <span class="n">model</span><span class="o">=</span><span class="s2">&quot;openai/gpt-oss-120b&quot;</span><span class="p">))</span>
 </code></pre></div>
 <p>Set the matching env var (e.g. <code>export GROQ_API_KEY=…</code>) and you're done.</p>
 <h2 id="built-in-providers">Built-in providers<a class="headerlink" href="#built-in-providers" title="Permanent link">&para;</a></h2>
@@ -6710,8 +6710,8 @@ pause and resume — and is checked live by <code>tests/e2e/test_gemini_latest_l
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"assistant"</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"gemini"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gemini-3.8-flash"</span><span class="p">),</span>  <span class="c1"># GEMINI_API_KEY</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;gemini&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-3.8-flash&quot;</span><span class="p">),</span>  <span class="c1"># GEMINI_API_KEY</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">],</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">)</span>
 </code></pre></div>
@@ -6752,7 +6752,7 @@ summary comes back as <code>response.reasoning</code>, apart from the answer). T
 <h2 id="what-a-model-can-take-model_info">What a model can take: <code>model_info</code><a class="headerlink" href="#what-a-model-can-take-model_info" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMClient</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">info</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-haiku-4-5"</span><span class="p">)</span><span class="o">.</span><span class="n">model_info</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">info</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-haiku-4-5&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">model_info</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">info</span><span class="o">.</span><span class="n">context_window</span>      <span class="c1"># 200000</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">info</span><span class="o">.</span><span class="n">max_output_tokens</span>   <span class="c1"># 64000</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">info</span><span class="o">.</span><span class="n">supports_reasoning</span>  <span class="c1"># True</span>
@@ -6777,12 +6777,12 @@ gets 4096. Set <code>max_tokens=</code> to cap replies yourself.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMClient</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-5-mini"</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5-mini&quot;</span><span class="p">,</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">max_retries</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">fallbacks</span><span class="o">=</span><span class="p">[</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-haiku-4-5"</span><span class="p">),</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"gemini"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gemini-3.8-flash"</span><span class="p">),</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-haiku-4-5&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;gemini&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-3.8-flash&quot;</span><span class="p">),</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="p">],</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
 </code></pre></div>
@@ -6814,12 +6814,12 @@ fell back (<code>tests/e2e/test_llm_resilience_live.py</code>).</p>
 <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/111_llm_fallbacks_and_model_info.py"><code>examples/111_llm_fallbacks_and_model_info.py</code></a>.</p>
 <h2 id="provider-options-the-sdk-has-no-parameter-for">Provider options the SDK has no parameter for<a class="headerlink" href="#provider-options-the-sdk-has-no-parameter-for" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-5-mini"</span><span class="p">,</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">extra_body</span><span class="o">=</span><span class="p">{</span><span class="s2">"service_tier"</span><span class="p">:</span> <span class="s2">"flex"</span><span class="p">,</span> <span class="s2">"safety_identifier"</span><span class="p">:</span> <span class="s2">"user-123"</span><span class="p">},</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">extra_headers</span><span class="o">=</span><span class="p">{</span><span class="s2">"X-Client-Team"</span><span class="p">:</span> <span class="s2">"billing"</span><span class="p">},</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5-mini&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">extra_body</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;service_tier&quot;</span><span class="p">:</span> <span class="s2">&quot;flex&quot;</span><span class="p">,</span> <span class="s2">&quot;safety_identifier&quot;</span><span class="p">:</span> <span class="s2">&quot;user-123&quot;</span><span class="p">},</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">extra_headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;X-Client-Team&quot;</span><span class="p">:</span> <span class="s2">&quot;billing&quot;</span><span class="p">},</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span> <span class="n">extra_body</span><span class="o">=</span><span class="p">{</span><span class="s2">"service_tier"</span><span class="p">:</span> <span class="s2">"priority"</span><span class="p">})</span>  <span class="c1"># per call, merged over</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span> <span class="n">extra_body</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;service_tier&quot;</span><span class="p">:</span> <span class="s2">&quot;priority&quot;</span><span class="p">})</span>  <span class="c1"># per call, merged over</span>
 </code></pre></div>
 <p><code>extra_body</code> is merged into every request body and <code>extra_headers</code> into its
 headers, for every provider — OpenAI and every OpenAI-compatible preset,
@@ -6837,18 +6837,18 @@ OpenAI on Azure ML</strong> — pass <code>verify</code>:</p>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Trust a corporate CA bundle (the issuing chain — root + intermediates, PEM):</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">"azure"</span><span class="p">,</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">"&lt;deployment&gt;"</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">base_url</span><span class="o">=</span><span class="s2">"https://&lt;gateway&gt;/openai/v1"</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">api_key</span><span class="o">=</span><span class="s2">"&lt;key&gt;"</span><span class="p">,</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">verify</span><span class="o">=</span><span class="s2">"/path/to/corporate-ca.pem"</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;azure&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;&lt;deployment&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://&lt;gateway&gt;/openai/v1&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;&lt;key&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">verify</span><span class="o">=</span><span class="s2">&quot;/path/to/corporate-ca.pem&quot;</span><span class="p">,</span>
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="p">)</span>
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># Or disable verification entirely (development only — see warning below):</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"azure"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"&lt;deployment&gt;"</span><span class="p">,</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>                <span class="n">base_url</span><span class="o">=</span><span class="s2">"https://&lt;gateway&gt;/openai/v1"</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;azure&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;&lt;deployment&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>                <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://&lt;gateway&gt;/openai/v1&quot;</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"bot"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bot&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span>
 </code></pre></div>
 <p><code>verify</code> accepts the same shapes as httpx:</p>
 <table>
@@ -6904,14 +6904,14 @@ call to it. The client's <code>base_url</code>, <code>api_version</code>, auth (
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">azure</span> <span class="o">=</span> <span class="n">AzureOpenAI</span><span class="p">(</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">azure_endpoint</span><span class="o">=</span><span class="s2">"https://&lt;gateway-or-resource&gt;"</span><span class="p">,</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">api_version</span><span class="o">=</span><span class="s2">"2024-10-21"</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">azure_endpoint</span><span class="o">=</span><span class="s2">&quot;https://&lt;gateway-or-resource&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">api_version</span><span class="o">=</span><span class="s2">&quot;2024-10-21&quot;</span><span class="p">,</span>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">azure_ad_token_provider</span><span class="o">=</span><span class="n">get_token</span><span class="p">,</span>        <span class="c1"># managed identity — refreshes automatically</span>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">http_client</span><span class="o">=</span><span class="n">httpx</span><span class="o">.</span><span class="n">Client</span><span class="p">(</span><span class="n">verify</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>   <span class="c1"># gateway TLS handled by the openai client</span>
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="p">)</span>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"azure"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"&lt;deployment-name&gt;"</span><span class="p">,</span> <span class="n">openai_client</span><span class="o">=</span><span class="n">azure</span><span class="p">)</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"bot"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;azure&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;&lt;deployment-name&gt;&quot;</span><span class="p">,</span> <span class="n">openai_client</span><span class="o">=</span><span class="n">azure</span><span class="p">)</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bot&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span>
 </code></pre></div>
 <p>Notes:</p>
 <ul>
@@ -7046,10 +7046,10 @@ capability flags do to the request body, with the body recorded, is in
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

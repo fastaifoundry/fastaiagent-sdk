@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6406,21 +6406,21 @@ rebuilds from that root.</p>
 <p>v6 migration (run automatically by <code>init_local_db()</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="n">VIRTUAL</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">span_fts</span><span class="w"> </span><span class="k">USING</span><span class="w"> </span><span class="n">fts5</span><span class="p">(</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="n">trace_id</span><span class="p">,</span><span class="w"> </span><span class="n">span_id</span><span class="w"> </span><span class="n">UNINDEXED</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">input_text</span><span class="p">,</span><span class="w"> </span><span class="n">output_text</span><span class="p">,</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="n">tokenize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'unicode61'</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="n">tokenize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;unicode61&#39;</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">);</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TRIGGER</span><span class="w"> </span><span class="n">spans_fts_ai</span><span class="w"> </span><span class="k">AFTER</span><span class="w"> </span><span class="k">INSERT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">spans</span><span class="w"> </span><span class="k">BEGIN</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">span_fts</span><span class="p">(...)</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="k">new</span><span class="p">.</span><span class="n">trace_id</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="p">.</span><span class="n">span_id</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="p">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">        </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."gen_ai.prompt"'</span><span class="p">),</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">        </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."gen_ai.response.text"'</span><span class="p">)</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">        </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;gen_ai.prompt&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">        </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;gen_ai.response.text&quot;&#39;</span><span class="p">)</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="p">);</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="k">END</span><span class="p">;</span>
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1">-- (similar AFTER DELETE / AFTER UPDATE triggers omitted for brevity)</span>
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
 <a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">span_fts</span><span class="p">(...)</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">spans</span><span class="p">;</span><span class="w">  </span><span class="c1">-- bulk backfill</span>
 <a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">saved_filters</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">project_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">''</span><span class="p">;</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">saved_filters</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">project_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="p">;</span>
 <a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_saved_filters_project</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">saved_filters</span><span class="p">(</span><span class="n">project_id</span><span class="p">);</span>
 </code></pre></div>
 <p>v10 migration drops and recreates those three triggers (and rebuilds the
@@ -6429,12 +6429,12 @@ pull from <code>agent.input</code> / <code>agent.output</code>, <code>gen_ai.req
 <code>tool.args</code> / <code>tool.result</code> — the keys native spans actually write:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">-- spans_fts_ai / _au input_text COALESCE (output_text is analogous):</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">COALESCE</span><span class="p">(</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."gen_ai.prompt"'</span><span class="p">),</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."fastaiagent.gen_ai.prompt"'</span><span class="p">),</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."agent.input"'</span><span class="p">),</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."gen_ai.request.messages"'</span><span class="p">),</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">'$."tool.args"'</span><span class="p">),</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="s1">''</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;gen_ai.prompt&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;fastaiagent.gen_ai.prompt&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;agent.input&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;gen_ai.request.messages&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="n">json_extract</span><span class="p">(</span><span class="k">new</span><span class="p">.</span><span class="n">attributes</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;$.&quot;tool.args&quot;&#39;</span><span class="p">),</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="s1">&#39;&#39;</span>
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">)</span>
 </code></pre></div>
 <p>Postgres parity: the UI's read tables are SQLite-only in this repo.
@@ -6443,7 +6443,7 @@ The Postgres deployment is currently checkpointer-only (see
 to Postgres, the equivalent index is:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_spans_attributes_fts</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="k">ON</span><span class="w"> </span><span class="n">fastaiagent</span><span class="p">.</span><span class="n">spans</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="k">USING</span><span class="w"> </span><span class="n">gin</span><span class="w"> </span><span class="p">(</span><span class="n">to_tsvector</span><span class="p">(</span><span class="s1">'english'</span><span class="p">,</span><span class="w"> </span><span class="n">attributes</span><span class="p">::</span><span class="nb">text</span><span class="p">));</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="k">USING</span><span class="w"> </span><span class="n">gin</span><span class="w"> </span><span class="p">(</span><span class="n">to_tsvector</span><span class="p">(</span><span class="s1">&#39;english&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">attributes</span><span class="p">::</span><span class="nb">text</span><span class="p">));</span>
 </code></pre></div>
 <h2 id="performance">Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h2>
 <p>The FTS5 index is non-negotiable at scale. On a 100 k-span DB, the
@@ -6520,10 +6520,10 @@ each filter in action.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

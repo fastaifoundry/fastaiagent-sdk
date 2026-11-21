@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6268,8 +6268,8 @@
 <p>Two <code>LLMClient</code> settings, added in 1.91.0, that every provider spells differently:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"gemini"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gemini-3.8-flash"</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">"low"</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="n">LONG_POLICY</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;gemini&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-3.8-flash&quot;</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">&quot;low&quot;</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="n">LONG_POLICY</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>
 </code></pre></div>
 <ul>
 <li><code>reasoning=</code> sets how hard the model thinks before answering.</li>
@@ -6277,14 +6277,14 @@
 </ul>
 <p>Both are off by default. An unset client sends exactly the request it sent before 1.91.0.</p>
 <h2 id="reasoning">Reasoning<a class="headerlink" href="#reasoning" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-haiku-5-5"</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">"medium"</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">UserMessage</span><span class="p">(</span><span class="s2">"A bat and a ball cost $1.10 ..."</span><span class="p">)])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-haiku-5-5&quot;</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">&quot;medium&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">UserMessage</span><span class="p">(</span><span class="s2">&quot;A bat and a ball cost $1.10 ...&quot;</span><span class="p">)])</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">response</span><span class="o">.</span><span class="n">content</span>                      <span class="c1"># "$0.05" — the answer, never the reasoning</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">response</span><span class="o">.</span><span class="n">content</span>                      <span class="c1"># &quot;$0.05&quot; — the answer, never the reasoning</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">response</span><span class="o">.</span><span class="n">reasoning</span>                    <span class="c1"># what the model showed of its thinking, or None</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">"reasoning_tokens"</span><span class="p">]</span>    <span class="c1"># the part of completion_tokens spent thinking</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">&quot;reasoning_tokens&quot;</span><span class="p">]</span>    <span class="c1"># the part of completion_tokens spent thinking</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">"high"</span><span class="p">)</span>   <span class="c1"># one call can override the client</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span> <span class="n">reasoning</span><span class="o">=</span><span class="s2">&quot;high&quot;</span><span class="p">)</span>   <span class="c1"># one call can override the client</span>
 </code></pre></div>
 <p>One vocabulary, lowest first: <code>"none"</code>, <code>"minimal"</code>, <code>"low"</code>, <code>"medium"</code>, <code>"high"</code>,
 <code>"xhigh"</code>, <code>"max"</code>. A typo raises <code>ValueError</code> before anything is sent. Each provider
@@ -6339,8 +6339,8 @@ gets the level in its own field:</p>
 through <code>xhigh</code>, Gemini 3.8 Flash has no <code>minimal</code>, and Opus 5.5 cannot turn
 thinking off. The SDK passes your choice through and lets the provider answer,
 because its 400 names the levels it supports:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Unsupported value: 'reasoning_effort' does not support 'max' with this model.
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Unsupported value: &#39;reasoning_effort&#39; does not support &#39;max&#39; with this model.
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Supported values are: &#39;none&#39;, &#39;low&#39;, &#39;medium&#39;, &#39;high&#39;, and &#39;xhigh&#39;.
 </code></pre></div>
 <p>GPT-6 models on Chat Completions take function tools only with reasoning off.
 An agent with tools and <code>reasoning="low"</code> on <code>gpt-6-luna</code> gets OpenAI's 400:
@@ -6383,7 +6383,7 @@ would have been glued onto the answer. Reasoning tokens are already inside
 alongside the <code>TextDelta</code>s of the answer:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReasoningDelta</span><span class="p">,</span> <span class="n">TextDelta</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">async</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">agent</span><span class="o">.</span><span class="n">astream</span><span class="p">(</span><span class="s2">"Is it warmer in Paris or Rome?"</span><span class="p">):</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">async</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">agent</span><span class="o">.</span><span class="n">astream</span><span class="p">(</span><span class="s2">&quot;Is it warmer in Paris or Rome?&quot;</span><span class="p">):</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">ReasoningDelta</span><span class="p">):</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="n">show_thinking</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">TextDelta</span><span class="p">):</span>
@@ -6401,8 +6401,8 @@ resume. They go back only to the provider that issued them, because a model
 cannot read another provider's reasoning. Bedrock's <code>reasoningContent</code> blocks are
 carried the same way.</p>
 <h2 id="prompt-caching">Prompt caching<a class="headerlink" href="#prompt-caching" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-sonnet-5-5"</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>    <span class="c1"># 5 minutes</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"anthropic"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"claude-sonnet-5-5"</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="s2">"1h"</span><span class="p">)</span>    <span class="c1"># one hour</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-5-5&quot;</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>    <span class="c1"># 5 minutes</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-5-5&quot;</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="s2">&quot;1h&quot;</span><span class="p">)</span>    <span class="c1"># one hour</span>
 </code></pre></div>
 <table>
 <thead>
@@ -6427,9 +6427,9 @@ carried the same way.</p>
 </tbody>
 </table>
 <p>Every provider's counts come back in one shape:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">"prompt_tokens"</span><span class="p">]</span>        <span class="c1"># the whole prompt, cached part included</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">"cached_tokens"</span><span class="p">]</span>        <span class="c1"># read from the cache</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">"cache_write_tokens"</span><span class="p">]</span>   <span class="c1"># written to it</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">&quot;prompt_tokens&quot;</span><span class="p">]</span>        <span class="c1"># the whole prompt, cached part included</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">&quot;cached_tokens&quot;</span><span class="p">]</span>        <span class="c1"># read from the cache</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">[</span><span class="s2">&quot;cache_write_tokens&quot;</span><span class="p">]</span>   <span class="c1"># written to it</span>
 </code></pre></div>
 <p>Anthropic and Bedrock report only the uncached part as input, so the SDK adds the
 cache back: <code>prompt_tokens</code> means the same thing on every provider. A prompt
@@ -6564,10 +6564,10 @@ only when set, so a default client's payload is unchanged.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

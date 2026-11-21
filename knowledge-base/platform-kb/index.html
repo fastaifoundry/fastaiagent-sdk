@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6286,36 +6286,36 @@
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">fa</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="s2">"fa_k_..."</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"https://&lt;label&gt;-dev.api.fastaiagent.net"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">fa</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;fa_k_...&quot;</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;https://&lt;label&gt;-dev.api.fastaiagent.net&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">PlatformKB</span><span class="p">(</span><span class="n">kb_id</span><span class="o">=</span><span class="s2">"c876a247-4fa1-4796-9d89-cc9a9e5fd4a3"</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">PlatformKB</span><span class="p">(</span><span class="n">kb_id</span><span class="o">=</span><span class="s2">&quot;c876a247-4fa1-4796-9d89-cc9a9e5fd4a3&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">results</span> <span class="o">=</span> <span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"refund policy"</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">results</span> <span class="o">=</span> <span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;refund policy&quot;</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">score</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">chunk</span><span class="o">.</span><span class="n">content</span><span class="p">[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s2">..."</span><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">score</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">chunk</span><span class="o">.</span><span class="n">content</span><span class="p">[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Async variant:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">kb</span><span class="o">.</span><span class="n">asearch</span><span class="p">(</span><span class="s2">"refund policy"</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">kb</span><span class="o">.</span><span class="n">asearch</span><span class="p">(</span><span class="s2">&quot;refund policy&quot;</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="using-with-an-agent">Using with an Agent<a class="headerlink" href="#using-with-an-agent" title="Permanent link">&para;</a></h2>
 <p>Wire it into an <code>Agent</code> via <code>.as_tool()</code> — identical to <code>LocalKB</code>. Give it a <code>name</code> and a
 <code>description</code> (1.99.0) so the agent knows what it holds:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">PlatformKB</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">kb_id</span><span class="o">=</span><span class="s2">"c876a247-4fa1-4796-9d89-cc9a9e5fd4a3"</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"refund-policy"</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">description</span><span class="o">=</span><span class="s2">"refund windows, fees and refund codes"</span><span class="p">,</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">kb_id</span><span class="o">=</span><span class="s2">&quot;c876a247-4fa1-4796-9d89-cc9a9e5fd4a3&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;refund-policy&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">description</span><span class="o">=</span><span class="s2">&quot;refund windows, fees and refund codes&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># tool: search_refund-policy — "Search the 'refund-policy' platform knowledge base:</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">#                               refund windows, fees and refund codes"</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># tool: search_refund-policy — &quot;Search the &#39;refund-policy&#39; platform knowledge base:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">#                               refund windows, fees and refund codes&quot;</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"policy-bot"</span><span class="p">,</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"Use the search tool to answer from the KB."</span><span class="p">,</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">),</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;policy-bot&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;Use the search tool to answer from the KB.&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">),</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">kb</span><span class="o">.</span><span class="n">as_tool</span><span class="p">()],</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="p">)</span>
 <a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"What's the refund policy?"</span><span class="p">)</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;What&#39;s the refund policy?&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
 </code></pre></div>
 <p>Because both <code>LocalKB</code> and <code>PlatformKB</code> expose the same <code>search(query, top_k) -&gt; list[SearchResult]</code> surface and the same <code>as_tool()</code> helper, an Agent wired for one works for the other — swap as you promote a KB from local prototyping to platform hosting. Both tools carry <code>origin="kb"</code>, so the Local UI lists them under the agent's knowledge bases (before 1.91.0 a <code>PlatformKB</code> tool showed up as a plain function tool).</p>
@@ -6445,10 +6445,10 @@ was asked for, and searched again and again for text it was never shown.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

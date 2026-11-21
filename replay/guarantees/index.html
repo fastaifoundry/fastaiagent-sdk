@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6548,8 +6548,8 @@ during a rerun:</p>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">forked</span> <span class="o">=</span> <span class="p">(</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">replay</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="o">.</span><span class="n">fork_at</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">.</span><span class="n">modify_prompt</span><span class="p">(</span><span class="s2">"Be more concise."</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">"recorded"</span><span class="p">)</span>  <span class="c1"># ← skips the LLM call entirely</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">.</span><span class="n">modify_prompt</span><span class="p">(</span><span class="s2">&quot;Be more concise.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">&quot;recorded&quot;</span><span class="p">)</span>  <span class="c1"># ← skips the LLM call entirely</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">)</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">result</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>
 </code></pre></div>
@@ -6604,8 +6604,8 @@ parroted turn 1).</p>
 <p>That live fall-through is billed and nondeterministic, and before
 v1.48.0 it happened silently. It is now warned loudly, and you can
 make it fatal — recommended whenever the rerun is a regression test:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">forked</span><span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">"recorded"</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">"error"</span><span class="p">)</span>   <span class="c1"># raises ReplayError</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">forked</span><span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">"recorded"</span><span class="p">)</span>                    <span class="c1"># default: on_miss="live"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">forked</span><span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">&quot;recorded&quot;</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="p">)</span>   <span class="c1"># raises ReplayError</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">forked</span><span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">&quot;recorded&quot;</span><span class="p">)</span>                    <span class="c1"># default: on_miss=&quot;live&quot;</span>
 </code></pre></div>
 <p><code>on_miss="error"</code> raises before any provider call, so a recorded suite
 can never quietly spend tokens or return drifted output.</p>
@@ -6652,8 +6652,8 @@ rerun of a refund agent refunded again.</p>
 tool is <strong>blocked</strong>. The model gets an error result that names the tool and
 how to allow it, and the rerun counts the call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">rerun</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">rerun</span><span class="o">.</span><span class="n">tool_dispositions</span>    <span class="c1"># {"lookup_order": "blocked", "charge_card": "blocked"}</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">rerun</span><span class="o">.</span><span class="n">blocked_tool_calls</span>   <span class="c1"># {"charge_card": 1}: the answer does not show its effect</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">rerun</span><span class="o">.</span><span class="n">tool_dispositions</span>    <span class="c1"># {&quot;lookup_order&quot;: &quot;blocked&quot;, &quot;charge_card&quot;: &quot;blocked&quot;}</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">rerun</span><span class="o">.</span><span class="n">blocked_tool_calls</span>   <span class="c1"># {&quot;charge_card&quot;: 1}: the answer does not show its effect</span>
 </code></pre></div>
 <p>A rerun that blocked a call also logs a warning. To give the rerun its tools:</p>
 <table>
@@ -6690,9 +6690,9 @@ how to allow it, and the rerun counts the call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">forked</span> <span class="o">=</span> <span class="p">(</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">Replay</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">trace_id</span><span class="p">)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="o">.</span><span class="n">fork_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">"recorded"</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">"error"</span><span class="p">)</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">"block"</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">"lookup_order"</span><span class="p">])</span>   <span class="c1"># the read-only lookup runs</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="o">.</span><span class="n">with_tool_stub</span><span class="p">(</span><span class="s2">"charge_card"</span><span class="p">,</span> <span class="n">returns</span><span class="o">=</span><span class="s2">"charged 0.00 (stub)"</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">&quot;recorded&quot;</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">])</span>   <span class="c1"># the read-only lookup runs</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="o">.</span><span class="n">with_tool_stub</span><span class="p">(</span><span class="s2">&quot;charge_card&quot;</span><span class="p">,</span> <span class="n">returns</span><span class="o">=</span><span class="s2">&quot;charged 0.00 (stub)&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">)</span>
 </code></pre></div>
 <p>Further rules:</p>
@@ -6768,11 +6768,11 @@ to decide, per call, whether to re-execute or inject the recorded output:</p>
 </table>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.tool</span><span class="w"> </span><span class="kn">import</span> <span class="n">tool</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"search_kb"</span><span class="p">,</span> <span class="n">replay_class</span><span class="o">=</span><span class="s2">"read_only"</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;search_kb&quot;</span><span class="p">,</span> <span class="n">replay_class</span><span class="o">=</span><span class="s2">&quot;read_only&quot;</span><span class="p">)</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">search_kb</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="o">...</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"create_ticket"</span><span class="p">)</span>           <span class="c1"># unmarked → "side_effecting" (safe default)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;create_ticket&quot;</span><span class="p">)</span>           <span class="c1"># unmarked → &quot;side_effecting&quot; (safe default)</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">create_ticket</span><span class="p">(</span><span class="n">summary</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="o">...</span>
 </code></pre></div>
@@ -6877,12 +6877,12 @@ call shows up in <code>tool_diffs</code>.</p>
 <p><code>compare()</code> reads the rerun from the store it was written to: the <code>store=</code>
 argument, then <code>with_trace_db</code>, then the default store.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">comp</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">rerun_result</span><span class="p">)</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">assert</span> <span class="n">comp</span><span class="o">.</span><span class="n">compare_status</span> <span class="o">==</span> <span class="s2">"ok"</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">assert</span> <span class="n">comp</span><span class="o">.</span><span class="n">compare_status</span> <span class="o">==</span> <span class="s2">&quot;ok&quot;</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">diverged_at</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"rerun matched the original step-for-step"</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;rerun matched the original step-for-step&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"diverged at step </span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">diverged_at</span><span class="si">}</span><span class="s2">: "</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">original_steps</span><span class="p">[</span><span class="n">comp</span><span class="o">.</span><span class="n">diverged_at</span><span class="p">]</span><span class="o">.</span><span class="n">span_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;diverged at step </span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">diverged_at</span><span class="si">}</span><span class="s2">: &quot;</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">original_steps</span><span class="p">[</span><span class="n">comp</span><span class="o">.</span><span class="n">diverged_at</span><span class="p">]</span><span class="o">.</span><span class="n">span_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>When the rerun trace can't be loaded (e.g., <code>Agent.arun</code> failed),
 <code>compare_status</code> is set to <code>"rerun_failed"</code> and <code>diverged_at</code> stays
@@ -6954,8 +6954,8 @@ rerun's root also carries where it came from:</p>
 <p><code>rerun.save_as_test(...)</code> appends a JSONL line in the format
 <code>evaluate()</code> reads natively:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">rerun</span><span class="o">.</span><span class="n">save_as_test</span><span class="p">(</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="s2">"regression_tests.jsonl"</span><span class="p">,</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">"What is our refund policy?"</span><span class="p">,</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="s2">&quot;regression_tests.jsonl&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;What is our refund policy?&quot;</span><span class="p">,</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">expected_output</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rerun</span><span class="o">.</span><span class="n">new_output</span><span class="p">),</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">source_trace_id</span><span class="o">=</span><span class="n">original_trace_id</span><span class="p">,</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
@@ -7023,10 +7023,10 @@ rerun's root also carries where it came from:</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

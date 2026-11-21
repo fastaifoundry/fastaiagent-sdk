@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6248,14 +6248,14 @@ asks an LLM to propose diverse multi-turn <code>Scenario</code>s — each with a
 persona and success / failure criteria — ready to pass straight to <code>simulate()</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span><span class="p">,</span> <span class="n">generate_scenarios</span><span class="p">,</span> <span class="n">simulate</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You are a support agent for an online store. Help with orders, refunds, shipping."</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You are a support agent for an online store. Help with orders, refunds, shipping.&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">scenarios</span> <span class="o">=</span> <span class="n">generate_scenarios</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">focus</span><span class="o">=</span><span class="s2">"frustrated customers"</span><span class="p">)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">scenarios</span> <span class="o">=</span> <span class="n">generate_scenarios</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">focus</span><span class="o">=</span><span class="s2">&quot;frustrated customers&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">results</span> <span class="o">=</span> <span class="n">simulate</span><span class="p">(</span><span class="n">scenarios</span><span class="p">,</span> <span class="n">agent</span><span class="p">)</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
 </code></pre></div>
@@ -6294,11 +6294,11 @@ Async variant: <code>agenerate_scenarios(...)</code>.</p>
 <p>Use them by name in <code>evaluate()</code> or directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskCompletion</span><span class="p">,</span> <span class="n">evaluate</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="s2">"cases.jsonl"</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>         <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"task_completion"</span><span class="p">,</span> <span class="s2">"hallucination"</span><span class="p">,</span> <span class="s2">"reflection_quality"</span><span class="p">])</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="s2">&quot;cases.jsonl&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>         <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;task_completion&quot;</span><span class="p">,</span> <span class="s2">&quot;hallucination&quot;</span><span class="p">,</span> <span class="s2">&quot;reflection_quality&quot;</span><span class="p">])</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># or directly</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">TaskCompletion</span><span class="p">(</span><span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="s2">"Book a table for 2 at 7pm."</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="s2">"Booked — confirmation #A12."</span><span class="p">)</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">TaskCompletion</span><span class="p">(</span><span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="s2">&quot;Book a table for 2 at 7pm.&quot;</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="s2">&quot;Booked — confirmation #A12.&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="scorecard">Scorecard<a class="headerlink" href="#scorecard" title="Permanent link">&para;</a></h2>
 <p><code>Scorecard</code> rolls up any <code>EvalResults</code> or <code>SimulationResults</code> into a compact
@@ -6306,9 +6306,9 @@ per-metric panel (avg score + pass-rate) plus an overall pass-rate. Aggregation
 only — no LLM calls.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Scorecard</span><span class="p">,</span> <span class="n">evaluate</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">results</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="s2">"cases.jsonl"</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>                   <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"task_completion"</span><span class="p">,</span> <span class="s2">"faithfulness"</span><span class="p">])</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">card</span> <span class="o">=</span> <span class="n">Scorecard</span><span class="o">.</span><span class="n">from_eval_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"support-v2"</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">results</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="s2">&quot;cases.jsonl&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>                   <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;task_completion&quot;</span><span class="p">,</span> <span class="s2">&quot;faithfulness&quot;</span><span class="p">])</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">card</span> <span class="o">=</span> <span class="n">Scorecard</span><span class="o">.</span><span class="n">from_eval_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;support-v2&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Scorecard — support-v2</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># ==================================================</span>
@@ -6332,12 +6332,12 @@ the agent's config (system prompt, tools, guardrails), and returns a structured
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Hardening Report — support (3 failing case(s))</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># ============================================================</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># 1. [instructions] State the 30-day refund window explicitly and cite the policy section.</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1">#      ↳ The agent answered "I don't know" to refund questions.</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1">#      ↳ The agent answered &quot;I don&#39;t know&quot; to refund questions.</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># 2. [tools] Add a `lookup_order(order_id)` tool.</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1">#      ↳ Several scenarios needed live order status the agent couldn't provide.</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1">#      ↳ Several scenarios needed live order status the agent couldn&#39;t provide.</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">report</span><span class="o">.</span><span class="n">recommendations</span><span class="p">:</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="s2">"→"</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">recommendation</span><span class="p">)</span>   <span class="c1"># target ∈ instructions|model|tools|guardrails|memory</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="s2">&quot;→&quot;</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">recommendation</span><span class="p">)</span>   <span class="c1"># target ∈ instructions|model|tools|guardrails|memory</span>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">report</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
 </code></pre></div>
 <p>The model is shown at most <strong>40</strong> failing cases or scenarios — enough to see the
@@ -6438,10 +6438,10 @@ UI's Simulations / Evals pages — no hosted runtime required.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

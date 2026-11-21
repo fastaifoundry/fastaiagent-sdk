@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6422,10 +6422,10 @@
 <p>You get all of it from one call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">report</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">agent</span><span class="p">,</span>                                   <span class="c1"># any Agent with a string system prompt</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">"tickets.jsonl"</span><span class="p">,</span>                         <span class="c1"># input + expected_output per case</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;tickets.jsonl&quot;</span><span class="p">,</span>                         <span class="c1"># input + expected_output per case</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="p">[</span><span class="n">TriageMatch</span><span class="p">()],</span>                         <span class="c1"># a scorer whose reason names the miss</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span><span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">"instructions"</span><span class="p">,</span> <span class="s2">"fewshot"</span><span class="p">),</span> <span class="n">max_eval_runs</span><span class="o">=</span><span class="mi">40</span><span class="p">),</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">proposer_llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"gpt-5"</span><span class="p">),</span>   <span class="c1"># the model that writes prompts</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span><span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;instructions&quot;</span><span class="p">,</span> <span class="s2">&quot;fewshot&quot;</span><span class="p">),</span> <span class="n">max_eval_runs</span><span class="o">=</span><span class="mi">40</span><span class="p">),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">proposer_llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5&quot;</span><span class="p">),</span>   <span class="c1"># the model that writes prompts</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">better</span> <span class="o">=</span> <span class="n">report</span><span class="o">.</span><span class="n">apply_to</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
@@ -6474,7 +6474,7 @@
 <p>Proof 2 is the triage flagship's own trajectory. The rationales are the proposer's words; nobody told it the thresholds:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a> iter 1 [instructions]  dev=0.767 (+0.200)  ACCEPT  — Adds explicit, concise priority rules to
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>     correct mis-prioritization: large billing disputes (&gt;=500) → P1; tech outages/errors → P2 …
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a> iter 3 [instructions]  dev=0.933 (+0.367)  ACCEPT  — Introduces a brief 'Escalation overrides'
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a> iter 3 [instructions]  dev=0.933 (+0.367)  ACCEPT  — Introduces a brief &#39;Escalation overrides&#39;
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>     section that cleanly captures the two needed exceptions without altering the base rules …
 </code></pre></div>
 <p>and the prompt it wrote carries the rules the labels had been hiding:</p>
@@ -6500,16 +6500,16 @@
 <li><strong>A <code>Supervisor</code>, <code>Swarm</code> or <code>Chain</code> is refused</strong> with <code>TypeError</code>. Optimize the <code>Agent</code> behind each step.</li>
 </ul>
 <p>Proof 3 runs offline, on the SDK's own <code>FunctionModel</code>. A candidate with a new prompt <em>and</em> few-shot demos is applied to an agent with no memory, then serves two customers in a row:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">tuned</span> <span class="o">=</span> <span class="n">apply_candidate</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">Candidate</span><span class="p">(</span><span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You triage tickets by the house rules."</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">tuned</span> <span class="o">=</span> <span class="n">apply_candidate</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">Candidate</span><span class="p">(</span><span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You triage tickets by the house rules.&quot;</span><span class="p">,</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>                                        <span class="n">fewshot_demos</span><span class="o">=</span><span class="n">demos</span><span class="p">))</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">tuned</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"customer one: my card is 4111 1111 1111 1111"</span><span class="p">)</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">tuned</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"customer two: hello"</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">tuned</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;customer one: my card is 4111 1111 1111 1111&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">tuned</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;customer two: hello&quot;</span><span class="p">)</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>original prompt : 'You triage tickets.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>original prompt : &#39;You triage tickets.&#39;
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>original memory : None
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>tuned prompt    : 'You triage tickets by the house rules.'
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>tuned prompt    : &#39;You triage tickets by the house rules.&#39;
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>demo in prompt  : True
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>customer two saw: ['customer two: hello']
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>customer two saw: [&#39;customer two: hello&#39;]
 </code></pre></div>
 <p>The original kept its prompt and its lack of memory. The demos reached the prompt. Customer two's prompt carried nothing of customer one's card number.</p>
 <p><strong>Code:</strong> <code>apply_candidate</code> and <code>_clone_memory_blocks</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/optimize/candidate.py"><code>optimize/candidate.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/autollm/proofs/proof_isolation.py"><code>proofs/proof_isolation.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_optimize_stateless.py"><code>tests/test_optimize_stateless.py</code></a> runs the same check across every lever, every way a candidate is built, and <code>run</code> and <code>astream</code>.</p>
@@ -6544,9 +6544,9 @@
 <li><strong>A deterministic scorer needs no judge.</strong> Set <code>primary_metric</code> and select on it; reserve the judge, if any, for the audit.</li>
 </ul>
 <p>Proof 5 runs offline; nothing is scored:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>same name   → audit_judge is named 'g_eval', like a different scorer in scorers, so the holdout
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>same name   → audit_judge is named &#39;g_eval&#39;, like a different scorer in scorers, so the holdout
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>              guard would score with that scorer instead of the audit judge. Give the audit judge
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>              its own name, e.g. name='audit'.
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>              its own name, e.g. name=&#39;audit&#39;.
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>audit unset → audit_judge is None; falling back to selection_judge. Selection and the holdout
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>              audit now share a judge, so a reference-free agent is optimizing against its own
@@ -6574,7 +6574,7 @@
 <li><strong>Noise ends a run early.</strong> <code>min_delta</code> says what counts as a gain; <code>patience</code> says how many rounds without one to tolerate.</li>
 </ul>
 <p>Proof 6 runs offline. A cap too small is refused before anything runs; a cap of five ends the run as <code>budget</code>, and the number of evaluation passes actually written to <code>local.db</code> is five:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>max_eval_runs=1 → max_eval_runs=1, max_judge_calls=None can't cover the baseline and the holdout
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>max_eval_runs=1 → max_eval_runs=1, max_judge_calls=None can&#39;t cover the baseline and the holdout
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>                  guard, which need 2 evaluations and 0 judge calls on this dataset. Raise the caps.
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>Optimization — decider (stopped: budget)
@@ -6701,10 +6701,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

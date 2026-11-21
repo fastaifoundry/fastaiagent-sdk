@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6380,10 +6380,10 @@
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb.backends.sqlite</span><span class="w"> </span><span class="kn">import</span> <span class="n">SqliteMetadataStore</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"docs"</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">vector_store</span><span class="o">=</span><span class="n">FaissVectorStore</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span> <span class="n">index_type</span><span class="o">=</span><span class="s2">"hnsw"</span><span class="p">),</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;docs&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">vector_store</span><span class="o">=</span><span class="n">FaissVectorStore</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span> <span class="n">index_type</span><span class="o">=</span><span class="s2">&quot;hnsw&quot;</span><span class="p">),</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">keyword_store</span><span class="o">=</span><span class="n">BM25KeywordStore</span><span class="p">(</span><span class="n">k1</span><span class="o">=</span><span class="mf">1.2</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mf">0.75</span><span class="p">),</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">metadata_store</span><span class="o">=</span><span class="n">SqliteMetadataStore</span><span class="p">(</span><span class="s2">"/shared/storage/kb.sqlite"</span><span class="p">),</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">metadata_store</span><span class="o">=</span><span class="n">SqliteMetadataStore</span><span class="p">(</span><span class="s2">&quot;/shared/storage/kb.sqlite&quot;</span><span class="p">),</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
 </code></pre></div>
 <p>On a shared store, or an existing collection, each KB touches only its own
@@ -6394,7 +6394,7 @@ removes a point this KB never loaded, such as an id from a search hit on an
 existing collection. <code>kb.clear()</code> is the exception: it drops the whole store.</p>
 <h2 id="qdrant">Qdrant<a class="headerlink" href="#qdrant" title="Permanent link">&para;</a></h2>
 <p>Install with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'fastaiagent[qdrant]'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;fastaiagent[qdrant]&#39;</span>
 </code></pre></div>
 <p><strong>Remote Qdrant (self-hosted or Qdrant Cloud):</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalKB</span>
@@ -6402,61 +6402,61 @@ existing collection. <code>kb.clear()</code> is the exception: it drops the whol
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb.embedding</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIEmbedder</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">search_type</span><span class="o">=</span><span class="s2">"vector"</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">embedder</span><span class="o">=</span><span class="n">OpenAIEmbedder</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"text-embedding-3-small"</span><span class="p">),</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">search_type</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">embedder</span><span class="o">=</span><span class="n">OpenAIEmbedder</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;text-embedding-3-small&quot;</span><span class="p">),</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">vector_store</span><span class="o">=</span><span class="n">QdrantVectorStore</span><span class="p">(</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="n">url</span><span class="o">=</span><span class="s2">"http://localhost:6333"</span><span class="p">,</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="n">collection</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="n">url</span><span class="o">=</span><span class="s2">&quot;http://localhost:6333&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="n">collection</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>        <span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="p">),</span>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">)</span>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"docs/"</span><span class="p">)</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">results</span> <span class="o">=</span> <span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"refund policy"</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;docs/&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">results</span> <span class="o">=</span> <span class="n">kb</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;refund policy&quot;</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Qdrant Cloud:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">vector_store</span><span class="o">=</span><span class="n">QdrantVectorStore</span><span class="p">(</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">url</span><span class="o">=</span><span class="s2">"https://xyz.eu-central-1.aws.cloud.qdrant.io"</span><span class="p">,</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"QDRANT_API_KEY"</span><span class="p">],</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">url</span><span class="o">=</span><span class="s2">&quot;https://xyz.eu-central-1.aws.cloud.qdrant.io&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;QDRANT_API_KEY&quot;</span><span class="p">],</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
 </code></pre></div>
 <p><strong>In-memory (tests, quick experiments):</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">vector_store</span><span class="o">=</span><span class="n">QdrantVectorStore</span><span class="p">(</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">location</span><span class="o">=</span><span class="s2">":memory:"</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">"scratch"</span><span class="p">,</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">location</span><span class="o">=</span><span class="s2">&quot;:memory:&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">&quot;scratch&quot;</span><span class="p">,</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">dimension</span><span class="o">=</span><span class="mi">384</span><span class="p">,</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
 </code></pre></div>
 <p>Qdrant stores chunk content and metadata in the point payload, so a single Qdrant collection round-trips everything <code>VectorStore</code> needs. The default distance is cosine — pass <code>distance="Dot"</code> or <code>"Euclid"</code> to override.</p>
 <h2 id="chroma">Chroma<a class="headerlink" href="#chroma" title="Permanent link">&para;</a></h2>
 <p>Install with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'fastaiagent[chroma]'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;fastaiagent[chroma]&#39;</span>
 </code></pre></div>
 <p><strong>Ephemeral (in-process, in-memory — great for tests):</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb.backends.chroma</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChromaVectorStore</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"scratch"</span><span class="p">,</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">search_type</span><span class="o">=</span><span class="s2">"vector"</span><span class="p">,</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">vector_store</span><span class="o">=</span><span class="n">ChromaVectorStore</span><span class="p">(</span><span class="n">collection</span><span class="o">=</span><span class="s2">"scratch"</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="mi">384</span><span class="p">),</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;scratch&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">search_type</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">vector_store</span><span class="o">=</span><span class="n">ChromaVectorStore</span><span class="p">(</span><span class="n">collection</span><span class="o">=</span><span class="s2">&quot;scratch&quot;</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="mi">384</span><span class="p">),</span>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">persist</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">)</span>
 </code></pre></div>
 <p><strong>Persistent (on-disk):</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">vector_store</span><span class="o">=</span><span class="n">ChromaVectorStore</span><span class="p">(</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">persist_path</span><span class="o">=</span><span class="s2">"/var/lib/fastaiagent/chroma"</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">persist_path</span><span class="o">=</span><span class="s2">&quot;/var/lib/fastaiagent/chroma&quot;</span><span class="p">,</span>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">)</span>
 </code></pre></div>
 <p><strong>Remote Chroma server:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">vector_store</span><span class="o">=</span><span class="n">ChromaVectorStore</span><span class="p">(</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">collection</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">dimension</span><span class="o">=</span><span class="mi">1536</span><span class="p">,</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">host</span><span class="o">=</span><span class="s2">"chroma.internal"</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">host</span><span class="o">=</span><span class="s2">&quot;chroma.internal&quot;</span><span class="p">,</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">8000</span><span class="p">,</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">)</span>
 </code></pre></div>
@@ -6572,10 +6572,10 @@ existing collection. <code>kb.clear()</code> is the exception: it drops the whol
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

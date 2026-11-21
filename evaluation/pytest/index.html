@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6294,10 +6294,10 @@ that don't import any of these helpers are unaffected.</p>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">case</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nd">@case</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="s2">"hello"</span><span class="p">,</span> <span class="n">expected</span><span class="o">=</span><span class="s2">"hi"</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nd">@case</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="s2">&quot;hello&quot;</span><span class="p">,</span> <span class="n">expected</span><span class="o">=</span><span class="s2">&quot;hi&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_greet</span><span class="p">(</span><span class="n">evaluate_one</span><span class="p">):</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"greeter"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="s2">"hi"</span><span class="p">))</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">])</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;greeter&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="s2">&quot;hi&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">])</span>
 </code></pre></div>
 <p><code>evaluate_one</code> is the fixture exposed by the plugin. It reads the
 <code>@case</code> tag, runs the agent, scores the output, and asserts pass on
@@ -6317,10 +6317,10 @@ credentials.</p>
 <h2 id="pytest_dataset-parametrise-over-a-jsonlcsv-file"><code>@pytest_dataset</code> — parametrise over a JSONL/CSV file<a class="headerlink" href="#pytest_dataset-parametrise-over-a-jsonlcsv-file" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">pytest_dataset</span> <span class="k">as</span> <span class="n">dataset</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nd">@dataset</span><span class="p">(</span><span class="s2">"tests/data/cases.jsonl"</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nd">@dataset</span><span class="p">(</span><span class="s2">&quot;tests/data/cases.jsonl&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_dataset</span><span class="p">(</span><span class="n">eval_case</span><span class="p">,</span> <span class="n">evaluate_one</span><span class="p">):</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"bot"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=...</span><span class="p">)</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">])</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;bot&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=...</span><span class="p">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">])</span>
 </code></pre></div>
 <p>Each row of the dataset becomes one parametrised pytest invocation.
 <code>eval_case</code> is a dict (<code>{"input": ..., "expected_output": ...}</code>) and
@@ -6331,7 +6331,7 @@ credentials.</p>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="nb">input</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>                  <span class="c1"># overrides @case / @dataset</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">expected</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>               <span class="c1"># overrides @case / @dataset</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">],</span>     <span class="c1"># str names or Scorer instances</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">],</span>     <span class="c1"># str names or Scorer instances</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">assert_pass</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>            <span class="c1"># set False to inspect the record manually</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">case_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>              <span class="c1"># accepted, currently unused (no effect on the run)</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">persist</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                <span class="c1"># write to local.db</span>
@@ -6352,7 +6352,7 @@ up at <code>/evals</code> named <code>pytest::&lt;rootdir&gt;</code> — overrid
 </ul>
 <h2 id="gating-ci">Gating CI<a class="headerlink" href="#gating-ci" title="Permanent link">&para;</a></h2>
 <p>The plugin can fail the pytest session on aggregate quality:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">"overall.pass_rate=0.9"</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">&quot;overall.pass_rate=0.9&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">       </span>--eval-max-error-rate<span class="w"> </span><span class="m">0</span>.1<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">       </span>--eval-baseline<span class="w"> </span>main<span class="w"> </span>--eval-tolerance<span class="w"> </span><span class="m">0</span>.02
 </code></pre></div>
@@ -6440,10 +6440,10 @@ so no opt-in flag is needed. Passing no <code>--eval-*</code> options means no g
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

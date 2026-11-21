@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6413,15 +6413,15 @@
 </ul>
 <p>You declare all of it on one object:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">Guardrail</span><span class="p">(</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"no-ssn"</span><span class="p">,</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;no-ssn&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">guardrail_type</span><span class="o">=</span><span class="n">GuardrailType</span><span class="o">.</span><span class="n">regex</span><span class="p">,</span>       <span class="c1"># how it decides: code, regex, schema, llm_judge, …</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">position</span><span class="o">=</span><span class="n">GuardrailPosition</span><span class="o">.</span><span class="n">output</span><span class="p">,</span>         <span class="c1"># which gate</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">"pattern"</span><span class="p">:</span> <span class="sa">r</span><span class="s2">"\b\d</span><span class="si">{3}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">-\d</span><span class="si">{4}</span><span class="s2">\b"</span><span class="p">},</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;pattern&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;\b\d</span><span class="si">{3}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">-\d</span><span class="si">{4}</span><span class="s2">\b&quot;</span><span class="p">},</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                              <span class="c1"># inline, can halt</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">on_error</span><span class="o">=</span><span class="s2">"block"</span><span class="p">,</span>                           <span class="c1"># an un-runnable check fails closed</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">action</span><span class="o">=</span><span class="s2">"mask"</span><span class="p">,</span>                              <span class="c1"># a failure redacts rather than refuses</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">on_error</span><span class="o">=</span><span class="s2">&quot;block&quot;</span><span class="p">,</span>                           <span class="c1"># an un-runnable check fails closed</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">action</span><span class="o">=</span><span class="s2">&quot;mask&quot;</span><span class="p">,</span>                              <span class="c1"># a failure redacts rather than refuses</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">)</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">guardrails</span><span class="o">=</span><span class="p">[</span><span class="n">no_pii</span><span class="p">(),</span> <span class="n">rule</span><span class="p">])</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">guardrails</span><span class="o">=</span><span class="p">[</span><span class="n">no_pii</span><span class="p">(),</span> <span class="n">rule</span><span class="p">])</span>
 </code></pre></div>
 <p>The rest of this page is what that object has to get right.</p>
 <p><strong>Code:</strong> the object is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/guardrail.py"><code>guardrail/guardrail.py</code></a> (<code>Guardrail</code>, <code>GuardrailResult</code>); the executor is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/executor.py"><code>guardrail/executor.py</code></a>; the ten deciders are <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/implementations.py"><code>guardrail/implementations.py</code></a>; the gates are called from <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py"><code>agent/agent.py</code></a> and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/executor.py"><code>agent/executor.py</code></a>. The builtins are <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/03_guardrails.py"><code>examples/03_guardrails.py</code></a>.</p>
@@ -6439,20 +6439,20 @@
 </ul>
 <p>Proof 1 puts one gate and two observers at <code>input</code>, then makes the gate fail, then runs a tool call through all four positions:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>── one gate, two observers
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ran, in order : ['input:gate', 'input:watch-a', 'input:watch-b']
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>run status    : completed · output: 'ok'
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>firings       : [('gate', True, False, 'none'), ('watch-a', False, False, 'blocked'), ('watch-b', False, True, 'blocked')]
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ran, in order : [&#39;input:gate&#39;, &#39;input:watch-a&#39;, &#39;input:watch-b&#39;]
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>run status    : completed · output: &#39;ok&#39;
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>firings       : [(&#39;gate&#39;, True, False, &#39;none&#39;), (&#39;watch-a&#39;, False, False, &#39;blocked&#39;), (&#39;watch-b&#39;, False, True, &#39;blocked&#39;)]
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>── the gate fails: the observers never run
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>raised        : GuardrailBlockedError('gate'): gate: fail
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>ran, in order : ['input:gate']
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>raised        : GuardrailBlockedError(&#39;gate&#39;): gate: fail
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>ran, in order : [&#39;input:gate&#39;]
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>── four positions, one tool call
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>ran, in order : ['input', 'tool_call', 'tool_result', 'output']
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  input        judged str: 'Where is order 1042?'
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  tool_call    judged str: '{"tool": "lookup", "arguments": {"order": "1042"'
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  tool_result  judged str: 'order 1042: shipped'
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>  output       judged str: 'Order 1042 shipped.'
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>ran, in order : [&#39;input&#39;, &#39;tool_call&#39;, &#39;tool_result&#39;, &#39;output&#39;]
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  input        judged str: &#39;Where is order 1042?&#39;
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  tool_call    judged str: &#39;{&quot;tool&quot;: &quot;lookup&quot;, &quot;arguments&quot;: {&quot;order&quot;: &quot;1042&quot;&#39;
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  tool_result  judged str: &#39;order 1042: shipped&#39;
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>  output       judged str: &#39;Order 1042 shipped.&#39;
 </code></pre></div>
 <p><code>watch-a</code> failed and <code>watch-b</code> crashed; the run completed and both are on the record as failures. When the gate failed, neither ran. A <code>tool_call</code> rule judges the tool name and its arguments as one JSON object; a <code>tool_result</code> rule judges what the tool returned.</p>
 <p><strong>Code:</strong> <code>execute_guardrails</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/executor.py"><code>guardrail/executor.py</code></a>; the firing collector is <code>start_firing_collection</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/guardrail.py"><code>guardrail/guardrail.py</code></a>; the tool gates are <code>_invoke_tool_with_span</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/executor.py"><code>agent/executor.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/guardrails/proofs/proof_1_positions.py"><code>proof_1_positions.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_tool_guardrails.py"><code>tests/test_tool_guardrails.py</code></a> pins the tool positions and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/23_tool_guardrails.py"><code>examples/23_tool_guardrails.py</code></a> shows them live.</p>
@@ -6472,28 +6472,28 @@
 <p>Proof 2 sends the same reply, with a social-security number in it, through all five costs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>── the same failure, five costs (output position)
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>block     → GuardrailBlockedError: Pattern matched: \b\d{3}-\d{2}-\d{4}\b
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>warn      → output="The customer's SSN is 123-45-6789."  firing=('ssn', False, False, 'warned')
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>mask      → output="The customer's SSN is [REDACTED]."  firing=('ssn', False, False, 'masked')
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>override  → output="I can't share that."  firing=('ssn', False, False, 'overridden')
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>reask     → output="The customer's SSN is on file."  model calls=2
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>            second call's last message: 'Your previous response was rejected: Pattern matched: …'
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>warn      → output=&quot;The customer&#39;s SSN is 123-45-6789.&quot;  firing=(&#39;ssn&#39;, False, False, &#39;warned&#39;)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>mask      → output=&quot;The customer&#39;s SSN is [REDACTED].&quot;  firing=(&#39;ssn&#39;, False, False, &#39;masked&#39;)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>override  → output=&quot;I can&#39;t share that.&quot;  firing=(&#39;ssn&#39;, False, False, &#39;overridden&#39;)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>reask     → output=&quot;The customer&#39;s SSN is on file.&quot;  model calls=2
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>            second call&#39;s last message: &#39;Your previous response was rejected: Pattern matched: …&#39;
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>── a mask at input: what the model is sent
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>the model received: 'My SSN is [REDACTED], please update it.'
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>the model received: &#39;My SSN is [REDACTED], please update it.&#39;
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>── a mask feeds the next rule
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>output : "The customer's SSN is [REDACTED]."
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>firings: [('mask-ssn', False, False, 'masked'), ('block-ssn', True, False, 'none')] — block-ssn judged the masked text
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>output : &quot;The customer&#39;s SSN is [REDACTED].&quot;
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>firings: [(&#39;mask-ssn&#39;, False, False, &#39;masked&#39;), (&#39;block-ssn&#39;, True, False, &#39;none&#39;)] — block-ssn judged the masked text
 <a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>── an observer's rewrite is evidence, never applied
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>output : "The customer's SSN is 123-45-6789." · firing: ('watch-ssn', False, False, 'masked')
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>── an observer&#39;s rewrite is evidence, never applied
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>output : &quot;The customer&#39;s SSN is 123-45-6789.&quot; · firing: (&#39;watch-ssn&#39;, False, False, &#39;masked&#39;)
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>── where a rewrite cannot be applied: a streamed reply
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>already streamed: "The customer's SSN is 123-45-6789."
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>already streamed: &quot;The customer&#39;s SSN is 123-45-6789.&quot;
 <a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>then            : A guardrail asked to rewrite this reply, but it has already been streamed to the caller and cannot be taken back; blocked instead. Use run()/arun() if this rule must rewrite the output.
 <a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
 <a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>── an errored check blocks whatever the action says
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>passed=False errored=True action='mask' action_taken='blocked'
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>passed=False errored=True action=&#39;mask&#39; action_taken=&#39;blocked&#39;
 </code></pre></div>
 <p>Read the stream case: the text was already in the caller's hands when the output rule ran, so the rule could not un-send it, and the run was blocked after the fact. If a rewriting rule matters to you, don't stream that agent.</p>
 <p><img alt="The Guardrails page's event detail for a filtered outcome: the rule, the position, and a before and after diff of the rewritten content" src="../../ui/screenshots/sprint2-8-guardrail-detail-filtered.png" />
@@ -6514,24 +6514,24 @@
 </ul>
 <p>Proof 3 runs a crashing check under both policies, then ten unusable configurations through the real runners:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>── on_error: what an un-runnable check means
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>on_error=allow → run completed · firing=('moderation', True, True, 'none')
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>on_error=allow → run completed · firing=(&#39;moderation&#39;, True, True, &#39;none&#39;)
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>on_error=block → GuardrailBlockedError: moderation errored (on_error=block): moderation API timed out
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>── a configuration that cannot check anything
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>type            config                           passed errored  message
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>schema          {}                               False  True     u-schema errored (on_error=block): schema guardrail
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>schema          {'schema': {}}                   False  True     u-schema errored (on_error=block): schema guardrail
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>regex           {'pattern': ''}                  False  True     u-regex errored (on_error=block): regex guardrail 'u
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>classifier      {'categories': {}}               False  True     u-classifier errored (on_error=block): classifier gu
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>pii             {'entities': []}                 False  True     u-pii errored (on_error=block): pii guardrail names
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>pii             {'backend': 'presidoo'}          False  True     u-pii errored (on_error=block): pii guardrail backen
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>topic           {'topics': []}                   False  True     u-topic errored (on_error=block): topic guardrail na
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>topic           {'topics': ['ok'], 'mode': 'denyy'} False  True     u-topic errored (on_error=block): topic guardrail mo
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>content_safety  {'categories': ['S99']}          False  True     u-content_safety errored (on_error=block): content_s
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>schema          {&#39;schema&#39;: {}}                   False  True     u-schema errored (on_error=block): schema guardrail
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>regex           {&#39;pattern&#39;: &#39;&#39;}                  False  True     u-regex errored (on_error=block): regex guardrail &#39;u
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>classifier      {&#39;categories&#39;: {}}               False  True     u-classifier errored (on_error=block): classifier gu
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>pii             {&#39;entities&#39;: []}                 False  True     u-pii errored (on_error=block): pii guardrail names
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>pii             {&#39;backend&#39;: &#39;presidoo&#39;}          False  True     u-pii errored (on_error=block): pii guardrail backen
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>topic           {&#39;topics&#39;: []}                   False  True     u-topic errored (on_error=block): topic guardrail na
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>topic           {&#39;topics&#39;: [&#39;ok&#39;], &#39;mode&#39;: &#39;denyy&#39;} False  True     u-topic errored (on_error=block): topic guardrail mo
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>content_safety  {&#39;categories&#39;: [&#39;S99&#39;]}          False  True     u-content_safety errored (on_error=block): content_s
 <a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>groundedness    {}                               False  True     u-groundedness errored (on_error=block): groundednes
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
 <a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>── errored always blocks, whatever the action
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>action='mask' → action_taken='blocked' errored=True
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>action=&#39;mask&#39; → action_taken=&#39;blocked&#39; errored=True
 <a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>
 <a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>── a builtin that cannot price the run
 <a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>cost_limit outside a run → passed=False errored=True: cost_limit errored (on_error=block): cost_limit(max_usd=1.0) cannot ch…
@@ -6539,11 +6539,11 @@
 <p>The fail-open firing says <code>passed=True, errored=True</code>: a degraded pass is visible as one. And <code>cost_limit</code> outside a run, where there is no spend to read, errors rather than certifying an unknown as under budget.</p>
 <p>The model-backed judges keep the same rule. The live companion runs a <code>topic</code> rule and a <code>groundedness</code> rule on <code>gpt-4.1-mini</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>── topic, mode=deny: the judge names what it found
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>passed=True  matched=[]  ← 'Our Pro plan is $40 a month.'
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>passed=False matched=['competitor pricing']  ← 'Acme charges $35 for the same tier, so we are pricier.'
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>passed=True  matched=[]  ← &#39;Our Pro plan is $40 a month.&#39;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>passed=False matched=[&#39;competitor pricing&#39;]  ← &#39;Acme charges $35 for the same tier, so we are pricier.&#39;
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>── groundedness: the context comes from the run-scoped slot
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>with context    → passed=False score=0.5 unsupported=['support is available on weekends']
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>with context    → passed=False score=0.5 unsupported=[&#39;support is available on weekends&#39;]
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>without context → passed=False errored=True: grounded errored (on_error=block): groundedness has no context to judge against: set it wi…
 </code></pre></div>
 <p>The judge named the topic, and the groundedness judge quoted the unsupported claim. Take the context away and the rule did not pass: it reported that it could not run.</p>
@@ -6563,20 +6563,20 @@
 <p>Proof 4 runs a pass, a <code>pii</code> block and a <code>regex</code> observer and reads their spans:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>── one span per rule, pass and block alike
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>run      : blocked by no-email
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>span     : {"name": "length", "position": "output", "passed": true, "errored": false, "checks": "[{\"name\": \"length\", \"result\": \"pass\"}]", "action": "block", "action_taken": "none", "floor": false}
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>span     : {"name": "no-email", "position": "output", "passed": false, "errored": false, "checks": "[{\"name\": \"no-email\", \"result\": \"block\"}]", "action": "block", "action_taken": "blocked", "floor": false, "detail": "{\"ba…
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>span     : {&quot;name&quot;: &quot;length&quot;, &quot;position&quot;: &quot;output&quot;, &quot;passed&quot;: true, &quot;errored&quot;: false, &quot;checks&quot;: &quot;[{\&quot;name\&quot;: \&quot;length\&quot;, \&quot;result\&quot;: \&quot;pass\&quot;}]&quot;, &quot;action&quot;: &quot;block&quot;, &quot;action_taken&quot;: &quot;none&quot;, &quot;floor&quot;: false}
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>span     : {&quot;name&quot;: &quot;no-email&quot;, &quot;position&quot;: &quot;output&quot;, &quot;passed&quot;: false, &quot;errored&quot;: false, &quot;checks&quot;: &quot;[{\&quot;name\&quot;: \&quot;no-email\&quot;, \&quot;result\&quot;: \&quot;block\&quot;}]&quot;, &quot;action&quot;: &quot;block&quot;, &quot;action_taken&quot;: &quot;blocked&quot;, &quot;floor&quot;: false, &quot;detail&quot;: &quot;{\&quot;ba…
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>── what stays local vs what the span carries
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>no-email (pii)
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>  result.metadata, local : {"backend": "regex", "entities": ["email", "phone"], "found": ["email"], "counts": {"email": 1}, "total": 1}
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>  span detail, exported  : {"backend": "regex", "entities": ["email", "phone"], "found": ["email"], "counts": {"email": 1}, "total": 1}
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>  result.metadata, local : {&quot;backend&quot;: &quot;regex&quot;, &quot;entities&quot;: [&quot;email&quot;, &quot;phone&quot;], &quot;found&quot;: [&quot;email&quot;], &quot;counts&quot;: {&quot;email&quot;: 1}, &quot;total&quot;: 1}
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>  span detail, exported  : {&quot;backend&quot;: &quot;regex&quot;, &quot;entities&quot;: [&quot;email&quot;, &quot;phone&quot;], &quot;found&quot;: [&quot;email&quot;], &quot;counts&quot;: {&quot;email&quot;: 1}, &quot;total&quot;: 1}
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>no-ssn (regex)
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>  result.metadata, local : {}
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>  span detail, exported  : None
 <a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>── the export policy with FASTAIAGENT_TRACE_PAYLOADS=0
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>kept   : ['action', 'action_taken', 'checks', 'errored', 'floor', 'name', 'passed', 'position']
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>dropped: ['detail']
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>kept   : [&#39;action&#39;, &#39;action_taken&#39;, &#39;checks&#39;, &#39;errored&#39;, &#39;floor&#39;, &#39;name&#39;, &#39;passed&#39;, &#39;position&#39;]
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>dropped: [&#39;detail&#39;]
 </code></pre></div>
 <p>The <code>pii</code> detector reports counts and never values, so its allowlisted detail is the whole of its metadata; the regex rule has no allowlist entry and its span carries no detail. With payloads off, the detail leaves and the verdict stays.</p>
 <p><img alt="The Guardrails page's event detail for a blocked outcome: what triggered it, which rule matched, and what happened next" src="../../ui/screenshots/sprint2-7-guardrail-detail-blocked.png" />
@@ -6597,16 +6597,16 @@
 </ul>
 <p>Proof 5 builds a rule from the plane's own shape and runs the shared fixture, without contacting a plane:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>── a plane rule becomes a runtime guardrail
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>type=regex position=tool_call blocking=True action='block' severity=high floor=True origin=plane
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>implementation_type='code'     → None
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>implementation_type='quantum'  → None
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>type=regex position=tool_call blocking=True action=&#39;block&#39; severity=high floor=True origin=plane
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>implementation_type=&#39;code&#39;     → None
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>implementation_type=&#39;quantum&#39;  → None
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>── a plane rule is enforced beside local rules, never pushed back as one
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>agent.to_dict()['guardrails'] → ['local-length']
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>agent.to_dict()[&#39;guardrails&#39;] → [&#39;local-length&#39;]
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>── the shared conformance fixture, run through the SDK's detectors
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>── the shared conformance fixture, run through the SDK&#39;s detectors
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>fixture version 1: 26/26 cases agree (15 pii · 5 secrets · 6 mask)
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>cases that must raise, not pass: ["an empty entity list is refused, never read as 'found nothing'", 'an unknown entity is refused rather than silently dropped', …]
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>cases that must raise, not pass: [&quot;an empty entity list is refused, never read as &#39;found nothing&#39;&quot;, &#39;an unknown entity is refused rather than silently dropped&#39;, …]
 </code></pre></div>
 <p>The rule arrived with an action the SDK does not know, <code>redact-and-notify</code>, and became <code>block</code>: the safe reading for a safety control. A managed approval policy is the other direction of the same wire: a policy-gated tool call pauses the run for your application to resolve; see <a href="../managed-governance/">Managed governance</a>.</p>
 <p><strong>Code:</strong> <code>guardrail_from_policy_rule</code> and <code>plane_guardrails_for_agent</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/from_policy.py"><code>guardrail/from_policy.py</code></a>; the coercions in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/actions.py"><code>guardrail/actions.py</code></a>; the detectors in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/_internal/safety_detectors.py"><code>_internal/safety_detectors.py</code></a>, which the plane mirrors. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/guardrails/proofs/proof_5_plane_rule.py"><code>proof_5_plane_rule.py</code></a>; the fixture is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/data/guardrail_conformance.json"><code>tests/data/guardrail_conformance.json</code></a> with <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_guardrail_conformance.py"><code>tests/test_guardrail_conformance.py</code></a> and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_guardrail_from_policy.py"><code>tests/test_guardrail_from_policy.py</code></a>; live: <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/92_plane_authored_guardrails.py"><code>examples/92_plane_authored_guardrails.py</code></a>.</p>
@@ -6628,8 +6628,8 @@
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>regex (config)           False           False          False    Pattern matched: \d{3}-\d{2}-\d{4}
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>pii (config)             False           False          False    Personal data detected: email
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>no_pii() builtin         False           False          False    PII detected: email, ssn
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>cost_limit(1.0) builtin  False           False          True     cost_limit errored (on_error=block): code guardrail 'cost_li…
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>custom fn                False           False          True     mine errored (on_error=block): code guardrail 'mine' has no …
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>cost_limit(1.0) builtin  False           False          True     cost_limit errored (on_error=block): code guardrail &#39;cost_li…
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>custom fn                False           False          True     mine errored (on_error=block): code guardrail &#39;mine&#39; has no …
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>── a borrowing runtime: run_guardrail() on the text it holds
 <a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>action=warn   action_taken=warned   → continue with: mail bob@acme.com, ssn 123-45-6789
@@ -6739,10 +6739,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

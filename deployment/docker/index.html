@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6422,11 +6422,11 @@
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>fly<span class="w"> </span>deploy
 </code></pre></div>
 <p>A reasonable <code>fly.toml</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my-agent"</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">primary_region</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"iad"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-agent&quot;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">primary_region</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;iad&quot;</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">[build]</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="n">dockerfile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"Dockerfile"</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="n">dockerfile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Dockerfile&quot;</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">[http_service]</span>
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="n">internal_port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8000</span>
@@ -6436,8 +6436,8 @@
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="n">min_machines_running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span>
 <a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="k">[[vm]]</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"1gb"</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="n">cpu_kind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"shared"</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;1gb&quot;</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="n">cpu_kind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;shared&quot;</span>
 <a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span><span class="n">cpus</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
 </code></pre></div>
 <h2 id="deploy-render">Deploy — Render<a class="headerlink" href="#deploy-render" title="Permanent link">&para;</a></h2>
@@ -6459,19 +6459,19 @@
 <p>Railway detects the Dockerfile automatically and hands back a public URL.</p>
 <h2 id="deploy-aws-ecs-fargate">Deploy — AWS ECS / Fargate<a class="headerlink" href="#deploy-aws-ecs-fargate" title="Permanent link">&para;</a></h2>
 <p>For teams already on AWS. No one-liner; use Terraform or CDK. The key template fragment:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kr">resource</span><span class="w"> </span><span class="nc">"aws_ecs_task_definition"</span><span class="w"> </span><span class="nv">"agent"</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="na">family</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my-agent"</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="na">network_mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"awsvpc"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kr">resource</span><span class="w"> </span><span class="nc">&quot;aws_ecs_task_definition&quot;</span><span class="w"> </span><span class="nv">&quot;agent&quot;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="na">family</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-agent&quot;</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="na">network_mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;awsvpc&quot;</span>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="na">cpu</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="m">512</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="na">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1024</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="na">requires_compatibilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"FARGATE"</span><span class="p">]</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="na">requires_compatibilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;FARGATE&quot;</span><span class="p">]</span>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="na">container_definitions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nf">jsonencode</span><span class="p">([{</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="na">name</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="s2">"agent"</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="na">image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"your-ecr-repo/my-agent:v1"</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="na">name</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;agent&quot;</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="na">image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;your-ecr-repo/my-agent:v1&quot;</span>
 <a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="na">portMappings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="na">containerPort</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">8000</span><span class="w"> </span><span class="p">}]</span>
 <a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="na">secrets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="na">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"OPENAI_API_KEY", valueFrom = "arn:aws:secretsmanager:..."</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="na">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;OPENAI_API_KEY&quot;, valueFrom = &quot;arn:aws:secretsmanager:...&quot;</span><span class="w"> </span><span class="p">}</span>
 <a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="p">]</span>
 <a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">  </span><span class="p">}])</span>
 <a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="p">}</span>
@@ -6525,10 +6525,10 @@
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"FASTAIAGENT_API_KEY"</span><span class="p">):</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FASTAIAGENT_API_KEY&quot;</span><span class="p">):</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">fa</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"FASTAIAGENT_API_KEY"</span><span class="p">],</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="n">target</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"FASTAIAGENT_TARGET"</span><span class="p">],</span>  <span class="c1"># your program address</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;FASTAIAGENT_API_KEY&quot;</span><span class="p">],</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="n">target</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;FASTAIAGENT_TARGET&quot;</span><span class="p">],</span>  <span class="c1"># your program address</span>
 <a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="p">)</span>
 </code></pre></div>
 <p>Set those two env vars in your platform's secret manager and every production run's trace lands in your dashboard next to your dev runs.</p>
@@ -6600,10 +6600,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

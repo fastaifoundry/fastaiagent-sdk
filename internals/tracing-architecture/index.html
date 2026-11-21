@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -27,10 +27,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6444,7 +6444,7 @@
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Every <code>agent.run()</code> produces a tree of OTel spans. Each span records what happened (name), when (timestamps), what was involved (attributes), and whether it succeeded (status). The spans flow through two independent sinks simultaneously:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>agent.run("hello")
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>agent.run(&quot;hello&quot;)
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    │
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    ▼
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>OTel TracerProvider (singleton)
@@ -6639,7 +6639,7 @@ scope's <code>export=True</code>). Two consequences:</p>
 </table>
 <p>The trace_id is extracted from the span context after the span is created:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">ctx</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">get_span_context</span><span class="p">()</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">result</span><span class="o">.</span><span class="n">trace_id</span> <span class="o">=</span> <span class="nb">format</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">trace_id</span><span class="p">,</span> <span class="s2">"032x"</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">result</span><span class="o">.</span><span class="n">trace_id</span> <span class="o">=</span> <span class="nb">format</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">trace_id</span><span class="p">,</span> <span class="s2">&quot;032x&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="2-llm-call-span">2. LLM Call Span<a class="headerlink" href="#2-llm-call-span" title="Permanent link">&para;</a></h3>
 <p><strong>File:</strong> <code>fastaiagent/llm/client.py</code> — <code>acomplete()</code></p>
@@ -6815,9 +6815,9 @@ scope's <code>export=True</code>). Two consequences:</p>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="n">name</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="n">start_time</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">    </span><span class="n">end_time</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'OK'</span><span class="p">,</span>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="n">attributes</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'{}'</span><span class="p">,</span>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="n">events</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'[]'</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;OK&#39;</span><span class="p">,</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="n">attributes</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;{}&#39;</span><span class="p">,</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="n">events</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;[]&#39;</span>
 <a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">);</span>
 <a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">idx_spans_trace_id</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">spans</span><span class="w"> </span><span class="p">(</span><span class="n">trace_id</span><span class="p">);</span>
 <a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">idx_spans_start_time</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">spans</span><span class="w"> </span><span class="p">(</span><span class="n">start_time</span><span class="p">);</span>
@@ -6825,12 +6825,12 @@ scope's <code>export=True</code>). Two consequences:</p>
 <p>The <code>attributes</code> column holds the full attribute dict as a JSON string. Every attribute set on the span — whether structural or payload — is stored here verbatim. The payload gating decision happens at span-write time (in <code>_arun_traced</code>, <code>acomplete</code>, <code>_invoke_tool_with_span</code>), not at SQLite-write time. If an attribute was set on the span, it's in SQLite.</p>
 <h3 id="how-get_trace-reads-it-back">How <code>get_trace()</code> reads it back<a class="headerlink" href="#how-get_trace-reads-it-back" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">rows</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">fetchall</span><span class="p">(</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="s2">"SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time"</span><span class="p">,</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="s2">&quot;SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time&quot;</span><span class="p">,</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="p">(</span><span class="n">trace_id</span><span class="p">,),</span>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="p">)</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">SpanData</span><span class="p">(</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">attributes</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"attributes"</span><span class="p">]),</span>  <span class="c1"># JSON string → dict</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">attributes</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;attributes&quot;</span><span class="p">]),</span>  <span class="c1"># JSON string → dict</span>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="c1"># …plus the remaining columns</span>
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="p">)</span>
 </code></pre></div>
@@ -6848,23 +6848,23 @@ scope's <code>export=True</code>). Two consequences:</p>
 <li>POSTs to <code>{target}/public/v1/traces/ingest</code> with the payload:</li>
 </ol>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="nt">"project"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;project_id or project name&gt;"</span><span class="p">,</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">"spans"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="nt">&quot;project&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;project_id or project name&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">&quot;spans&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">        </span><span class="p">{</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">            </span><span class="nt">"span_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"05ce90ff1ed8ebc1"</span><span class="p">,</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">            </span><span class="nt">"trace_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"b929b94c0b6921a0e11fafc29fbca489"</span><span class="p">,</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">            </span><span class="nt">"parent_span_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1f4c1a16079e982c"</span><span class="p">,</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tool.lookup_order"</span><span class="p">,</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">            </span><span class="nt">"start_time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-04-11T19:37:03.321685+00:00"</span><span class="p">,</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">            </span><span class="nt">"end_time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-04-11T19:37:03.325100+00:00"</span><span class="p">,</span>
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">            </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">            </span><span class="nt">"attributes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">                </span><span class="nt">"tool.name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lookup_order"</span><span class="p">,</span>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">                </span><span class="nt">"tool.args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"{\"order_id\": \"ORD-001\"}"</span><span class="p">,</span>
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">                </span><span class="nt">"tool.status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ok"</span><span class="p">,</span>
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">                </span><span class="nt">"tool.result"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MacBook Pro 16-inch, shipped 2026-04-01"</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">            </span><span class="nt">&quot;span_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;05ce90ff1ed8ebc1&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">            </span><span class="nt">&quot;trace_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;b929b94c0b6921a0e11fafc29fbca489&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">            </span><span class="nt">&quot;parent_span_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1f4c1a16079e982c&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">            </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool.lookup_order&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">            </span><span class="nt">&quot;start_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-11T19:37:03.321685+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">            </span><span class="nt">&quot;end_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-11T19:37:03.325100+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">            </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;OK&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">            </span><span class="nt">&quot;attributes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">                </span><span class="nt">&quot;tool.name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lookup_order&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">                </span><span class="nt">&quot;tool.args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;{\&quot;order_id\&quot;: \&quot;ORD-001\&quot;}&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">                </span><span class="nt">&quot;tool.status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">                </span><span class="nt">&quot;tool.result&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MacBook Pro 16-inch, shipped 2026-04-01&quot;</span>
 <a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">            </span><span class="p">},</span>
-<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">            </span><span class="nt">"events"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">            </span><span class="nt">&quot;events&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
 <a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">        </span><span class="p">}</span>
 <a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">    </span><span class="p">]</span>
 <a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="p">}</span>
@@ -6879,7 +6879,7 @@ scope's <code>export=True</code>). Two consequences:</p>
 <h2 id="payload-gating">Payload Gating<a class="headerlink" href="#payload-gating" title="Permanent link">&para;</a></h2>
 <p><strong>File:</strong> <code>fastaiagent/trace/span.py</code></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">trace_payloads_enabled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"FASTAIAGENT_TRACE_PAYLOADS"</span><span class="p">,</span> <span class="s2">"1"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"0"</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FASTAIAGENT_TRACE_PAYLOADS&quot;</span><span class="p">,</span> <span class="s2">&quot;1&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;0&quot;</span>
 </code></pre></div>
 <p>Default: <strong>on</strong> (payloads captured). Set <code>FASTAIAGENT_TRACE_PAYLOADS=0</code> to disable.</p>
 <h3 id="whats-gated-vs-whats-always-captured">What's gated vs what's always captured<a class="headerlink" href="#whats-gated-vs-whats-always-captured" title="Permanent link">&para;</a></h3>
@@ -7111,10 +7111,10 @@ scope's <code>export=True</code>). Two consequences:</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

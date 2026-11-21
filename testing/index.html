@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6145,16 +6145,16 @@ local UI, evals) works end-to-end against fake runs.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestModel</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"hello"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="s2">"hi"</span><span class="p">))</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">assert</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"anything"</span><span class="p">)</span><span class="o">.</span><span class="n">output</span> <span class="o">==</span> <span class="s2">"hi"</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;hello&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="s2">&quot;hi&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">assert</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;anything&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">output</span> <span class="o">==</span> <span class="s2">&quot;hi&quot;</span>
 </code></pre></div>
 <p>Constructor:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">TestModel</span><span class="p">(</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">response</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"ok"</span><span class="p">,</span>       <span class="c1"># list = round-robin</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">response</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;ok&quot;</span><span class="p">,</span>       <span class="c1"># list = round-robin</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">tool_calls</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>   <span class="c1"># canned tool calls</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">usage</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"test-model"</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;test-model&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">delay_ms</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">decisions</span><span class="p">:</span> <span class="n">DecisionResult</span> <span class="o">|</span> <span class="nb">dict</span> <span class="o">|</span> <span class="nb">list</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># canned decide() results</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">)</span>
@@ -6163,13 +6163,13 @@ local UI, evals) works end-to-end against fake runs.</p>
 results (one for every call, or a list served in order, the last repeating).
 Without it, <code>decide()</code> raises.</p>
 <p>Pass a list to round-robin through several responses on successive calls:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="p">[</span><span class="s2">"one"</span><span class="p">,</span> <span class="s2">"two"</span><span class="p">,</span> <span class="s2">"three"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">TestModel</span><span class="p">(</span><span class="n">response</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;one&quot;</span><span class="p">,</span> <span class="s2">&quot;two&quot;</span><span class="p">,</span> <span class="s2">&quot;three&quot;</span><span class="p">])</span>
 </code></pre></div>
 <p>Tool-call canned responses pair a (possibly empty) text response with
 one or more tool calls:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">TestModel</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">response</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">tool_calls</span><span class="o">=</span><span class="p">[{</span><span class="s2">"name"</span><span class="p">:</span> <span class="s2">"search"</span><span class="p">,</span> <span class="s2">"arguments"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"q"</span><span class="p">:</span> <span class="s2">"x"</span><span class="p">}}],</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">response</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">tool_calls</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;search&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;q&quot;</span><span class="p">:</span> <span class="s2">&quot;x&quot;</span><span class="p">}}],</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="p">)</span>
 </code></pre></div>
 <p>The tool calls attach to the <strong>first</strong> canned response. With a single string the
@@ -6184,15 +6184,15 @@ test state. Common pattern: turn 1 fires a tool, turn 2 returns the
 final answer.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">FunctionModel</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">state</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"calls"</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">state</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;calls&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">responder</span><span class="p">(</span><span class="n">messages</span><span class="p">):</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">state</span><span class="p">[</span><span class="s2">"calls"</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="k">if</span> <span class="n">state</span><span class="p">[</span><span class="s2">"calls"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="k">return</span> <span class="p">(</span><span class="s2">""</span><span class="p">,</span> <span class="p">[{</span><span class="s2">"name"</span><span class="p">:</span> <span class="s2">"search"</span><span class="p">,</span> <span class="s2">"arguments"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"q"</span><span class="p">:</span> <span class="s2">"x"</span><span class="p">}}])</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="k">return</span> <span class="p">(</span><span class="s2">"done"</span><span class="p">,</span> <span class="p">[])</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;calls&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="k">if</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;calls&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;search&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;q&quot;</span><span class="p">:</span> <span class="s2">&quot;x&quot;</span><span class="p">}}])</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;done&quot;</span><span class="p">,</span> <span class="p">[])</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"searcher"</span><span class="p">,</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;searcher&quot;</span><span class="p">,</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>              <span class="n">llm</span><span class="o">=</span><span class="n">FunctionModel</span><span class="p">(</span><span class="n">responder</span><span class="p">),</span>
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>              <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">search_tool</span><span class="p">])</span>
 </code></pre></div>
@@ -6200,7 +6200,7 @@ final answer.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">FunctionModel</span><span class="p">(</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">fn</span><span class="p">,</span>                          <span class="c1"># the responder, below</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"function-model"</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;function-model&quot;</span><span class="p">,</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">delay_ms</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">decide_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>              <span class="c1"># (input, questions) -&gt; DecisionResult | dict, for decide()</span>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">)</span>
@@ -6223,20 +6223,20 @@ platform had sent a set of rules, so you can test how your app handles a block w
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestModel</span><span class="p">,</span> <span class="n">plane_rules</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">RULE</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="s2">"name"</span><span class="p">:</span> <span class="s2">"no-codenames"</span><span class="p">,</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="s2">"guardrail_type"</span><span class="p">:</span> <span class="s2">"input"</span><span class="p">,</span>            <span class="c1"># input | output | tool</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="s2">"implementation_type"</span><span class="p">:</span> <span class="s2">"regex"</span><span class="p">,</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="s2">"config"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"pattern"</span><span class="p">:</span> <span class="sa">r</span><span class="s2">"(?i)\bbluejay\b"</span><span class="p">,</span> <span class="s2">"should_match"</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="s2">"validation_mode"</span><span class="p">:</span> <span class="s2">"blocking"</span><span class="p">,</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="s2">"on_error"</span><span class="p">:</span> <span class="s2">"block"</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;no-codenames&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="s2">&quot;guardrail_type&quot;</span><span class="p">:</span> <span class="s2">&quot;input&quot;</span><span class="p">,</span>            <span class="c1"># input | output | tool</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="s2">&quot;implementation_type&quot;</span><span class="p">:</span> <span class="s2">&quot;regex&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="s2">&quot;config&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;pattern&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;(?i)\bbluejay\b&quot;</span><span class="p">,</span> <span class="s2">&quot;should_match&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="s2">&quot;validation_mode&quot;</span><span class="p">:</span> <span class="s2">&quot;blocking&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="s2">&quot;on_error&quot;</span><span class="p">:</span> <span class="s2">&quot;block&quot;</span><span class="p">,</span>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="p">}</span>
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
 <a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_a_plane_block_reaches_the_caller</span><span class="p">():</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="s2">"ok"</span><span class="p">))</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">TestModel</span><span class="p">(</span><span class="s2">&quot;ok&quot;</span><span class="p">))</span>
 <a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="k">with</span> <span class="n">plane_rules</span><span class="p">([</span><span class="n">RULE</span><span class="p">]):</span>
 <a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>        <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">GuardrailBlockedError</span><span class="p">)</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>            <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"tell me about bluejay"</span><span class="p">)</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>    <span class="k">assert</span> <span class="n">err</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">guardrail_name</span> <span class="o">==</span> <span class="s2">"no-codenames"</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>            <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;tell me about bluejay&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>    <span class="k">assert</span> <span class="n">err</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">guardrail_name</span> <span class="o">==</span> <span class="s2">&quot;no-codenames&quot;</span>
 </code></pre></div>
 <p>The rules use the platform's policy shape and pass through the same cache and builder as a real
 policy pull, so a rule gives the same verdict here as on a connected run.</p>
@@ -6337,10 +6337,10 @@ plane as evidence (<em>since 1.104.0</em>; see
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

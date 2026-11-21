@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6306,9 +6306,9 @@ Slack — runs a second time.</p>
 an execution, so a side effect runs once even if the node re-runs.</p>
 <h2 id="the-footgun">The footgun<a class="headerlink" href="#the-footgun" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">approval_node</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">receipt</span> <span class="o">=</span> <span class="n">charge_customer</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">"amount"</span><span class="p">])</span>  <span class="c1"># side effect</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">decision</span> <span class="o">=</span> <span class="n">interrupt</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">"manager_approval"</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="p">{</span><span class="o">...</span><span class="p">})</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">"charge_id"</span><span class="p">:</span> <span class="n">receipt</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span> <span class="s2">"approved"</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">approved</span><span class="p">}</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">receipt</span> <span class="o">=</span> <span class="n">charge_customer</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">])</span>  <span class="c1"># side effect</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">decision</span> <span class="o">=</span> <span class="n">interrupt</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;manager_approval&quot;</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="p">{</span><span class="o">...</span><span class="p">})</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;charge_id&quot;</span><span class="p">:</span> <span class="n">receipt</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="s2">&quot;approved&quot;</span><span class="p">:</span> <span class="n">decision</span><span class="o">.</span><span class="n">approved</span><span class="p">}</span>
 </code></pre></div>
 <p>First execution: <code>charge_customer</code> runs (counter → 1), then the chain
 suspends. On <code>chain.resume(...)</code>: the node re-runs from the top,
@@ -6342,7 +6342,7 @@ from older versions are still read.</p>
 <p>The default key is <code>sha256(json.dumps([qualname, args, kwargs], sort_keys=True))</code>.
 That works for primitive args. For live objects (DB sessions, Pydantic
 models passed by reference, etc.) pass a custom <code>key_fn</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nd">@idempotent</span><span class="p">(</span><span class="n">key_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nd">@idempotent</span><span class="p">(</span><span class="n">key_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">):</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="o">...</span>
 </code></pre></div>
@@ -6368,18 +6368,18 @@ Pydantic models, dataclasses, datetimes, UUIDs, etc. round-trip cleanly.
 Non-JSON-serializable returns raise <code>IdempotencyError</code> at the first call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@idempotent</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">bad</span><span class="p">():</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"/tmp/x"</span><span class="p">)</span>  <span class="c1"># file handles aren't JSONable</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;/tmp/x&quot;</span><span class="p">)</span>  <span class="c1"># file handles aren&#39;t JSONable</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># IdempotencyError: @idempotent function 'bad' returned a</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># non-JSON-serializable value of type 'TextIOWrapper': ...</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># IdempotencyError: @idempotent function &#39;bad&#39; returned a</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># non-JSON-serializable value of type &#39;TextIOWrapper&#39;: ...</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Inside a chain you catch <code>ToolExecutionError</code>, not <code>IdempotencyError</code></p>
 <p>The decorator raises <code>IdempotencyError</code>, but a chain reaches your function
 through a <code>FunctionTool</code>, and <code>FunctionTool</code> wraps <strong>any</strong> exception the
 function raises:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ToolExecutionError: Tool 'n' failed: @idempotent function 'bad' returned a
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>non-JSON-serializable value of type 'TextIOWrapper': ...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ToolExecutionError: Tool &#39;n&#39; failed: @idempotent function &#39;bad&#39; returned a
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>non-JSON-serializable value of type &#39;TextIOWrapper&#39;: ...
 </code></pre></div>
 <p>The original is preserved on <code>__cause__</code>, so catch the wrapper and inspect
 it:</p>
@@ -6387,7 +6387,7 @@ it:</p>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent._internal.errors</span><span class="w"> </span><span class="kn">import</span> <span class="n">ToolExecutionError</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"order_id"</span><span class="p">:</span> <span class="s2">"A-1"</span><span class="p">})</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;order_id&quot;</span><span class="p">:</span> <span class="s2">&quot;A-1&quot;</span><span class="p">})</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="k">except</span> <span class="n">ToolExecutionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">__cause__</span><span class="p">,</span> <span class="n">IdempotencyError</span><span class="p">):</span>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>        <span class="o">...</span>  <span class="c1"># a cached node returned something unserializable</span>
@@ -6474,10 +6474,10 @@ pending HITL workflows survive the sweep.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

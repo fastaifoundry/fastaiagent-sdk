@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6720,7 +6720,7 @@ package:</p>
 <p><code>PostgresCheckpointer</code> is <strong>lazily</strong> importable and only loads psycopg
 when actually used:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.checkpointers.postgres</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostgresCheckpointer</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># requires `pip install 'fastaiagent[postgres]'`</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># requires `pip install &#39;fastaiagent[postgres]&#39;`</span>
 </code></pre></div>
 <h2 id="job_scope"><code>job_scope</code><a class="headerlink" href="#job_scope" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nd">@contextmanager</span>
@@ -6772,7 +6772,7 @@ original snapshot — context is never recomputed. See
 <code>Resume(approved=True, data={"amount": 500})</code> <strong>silently drops</strong> the <code>data</code>
 dict — no error, and <code>model_extra</code> is <code>None</code>. Put non-approval payload in
 <code>metadata</code> instead:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">Resume</span><span class="p">(</span><span class="n">approved</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"amount"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="s2">"approver"</span><span class="p">:</span> <span class="s2">"alice"</span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">Resume</span><span class="p">(</span><span class="n">approved</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;amount&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="s2">&quot;approver&quot;</span><span class="p">:</span> <span class="s2">&quot;alice&quot;</span><span class="p">})</span>
 </code></pre></div>
 <p>If you have seen <code>data</code> described as <em>reserved for non-approval resume
 cases</em>, read that as a note about a possible future field rather than an
@@ -7050,7 +7050,7 @@ does not re-run the side effect.</p>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">charge_customer</span><span class="p">(</span><span class="n">amount</span><span class="p">,</span> <span class="n">customer_id</span><span class="p">):</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="k">return</span> <span class="n">stripe</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="nd">@idempotent</span><span class="p">(</span><span class="n">key_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="nd">@idempotent</span><span class="p">(</span><span class="n">key_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">req</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="n">user</span><span class="p">,</span> <span class="n">req</span><span class="p">):</span>
 <a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    <span class="o">...</span>
 </code></pre></div>
@@ -7128,7 +7128,7 @@ cannot record the loss of is worse than stalling. See
 <a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="p">)</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>is_run_end(checkpoint) -&gt; bool
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>latest_resumable(checkpointer, execution_id, *, latest=None, runner="Execution") -&gt; Checkpoint | None
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>latest_resumable(checkpointer, execution_id, *, latest=None, runner=&quot;Execution&quot;) -&gt; Checkpoint | None
 <a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>latest_forkable(checkpointer, execution_id, *, checkpoint_id=None) -&gt; Checkpoint | None
 </code></pre></div>
 <p><code>is_run_end</code> is true for the terminal row a run writes when it ends. A
@@ -7178,7 +7178,7 @@ same shape.</p>
 <a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>        <span class="bp">self</span><span class="p">,</span>
 <a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>        <span class="n">connection_string</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>        <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>        <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"fastaiagent"</span><span class="p">,</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>        <span class="n">schema</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;fastaiagent&quot;</span><span class="p">,</span>
 <a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>        <span class="n">min_pool_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
 <a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>        <span class="n">max_pool_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
 <a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
@@ -7206,14 +7206,14 @@ to keep the migration template safe).</p>
 <p>Both gained the durability fields in v1.0:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ChainResult</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 <a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>    <span class="c1"># ... v0.x fields ...</span>
-<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>    <span class="n">execution_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>
-<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"completed"</span>             <span class="c1"># "completed" or "paused"</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>    <span class="n">execution_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;completed&quot;</span>             <span class="c1"># &quot;completed&quot; or &quot;paused&quot;</span>
 <a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>    <span class="n">pending_interrupt</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 <a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>
 <a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">AgentResult</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 <a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>    <span class="c1"># ... v0.x fields ...</span>
-<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>    <span class="n">execution_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>
-<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"completed"</span>             <span class="c1"># "completed", "paused" or (1.91.0) "cancelled"</span>
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>    <span class="n">execution_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;completed&quot;</span>             <span class="c1"># &quot;completed&quot;, &quot;paused&quot; or (1.91.0) &quot;cancelled&quot;</span>
 <a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a>    <span class="n">pending_interrupt</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 </code></pre></div>
 <p><code>AgentResult</code> carries more than the durability three — see the
@@ -7385,10 +7385,10 @@ it for you.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

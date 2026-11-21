@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6313,9 +6313,9 @@
 constructors:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">PDF</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"contract.pdf"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;contract.pdf&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_url</span><span class="p">(</span><span class="s2">"https://example.com/report.pdf"</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_url</span><span class="p">(</span><span class="s2">&quot;https://example.com/report.pdf&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p><code>PDF.from_url</code> is SSRF-hardened: only public <code>http(s)</code> hosts are
 accepted, every redirect hop is re-validated, and the body is capped at
@@ -6389,10 +6389,10 @@ vendor OCR API — hand the SDK the result and skip local decoding entirely:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pdfplumber</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">PDF</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">with</span> <span class="n">pdfplumber</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"contract.pdf"</span><span class="p">)</span> <span class="k">as</span> <span class="n">doc</span><span class="p">:</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">text</span> <span class="o">=</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">extract_text</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">""</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">pages</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">with</span> <span class="n">pdfplumber</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;contract.pdf&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">doc</span><span class="p">:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">extract_text</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">pages</span><span class="p">)</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"contract.pdf"</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">text</span><span class="p">)</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;contract.pdf&quot;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">text</span><span class="p">)</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">pdf</span><span class="o">.</span><span class="n">extract_text</span><span class="p">()</span>          <span class="c1"># returns your text verbatim — no PDF engine involved</span>
 </code></pre></div>
 <p><code>text=</code> is available on <code>from_file</code>, <code>from_bytes</code> and <code>from_url</code>, and survives
@@ -6403,7 +6403,7 @@ an engine, because they need the document's real geometry. For vision without
 one, render the pages with your own library and pass the <code>Image</code> parts straight
 into the call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">client</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"page1.png"</span><span class="p">),</span> <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"page2.png"</span><span class="p">),</span> <span class="s2">"Summarize"</span><span class="p">])</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">client</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;page1.png&quot;</span><span class="p">),</span> <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;page2.png&quot;</span><span class="p">),</span> <span class="s2">&quot;Summarize&quot;</span><span class="p">])</span>
 </code></pre></div>
 <p>Without an engine and without <code>text=</code>, these methods raise <code>MissingPDFBackendError</code>,
 which names every way forward. It subclasses <code>ImportError</code> as well as
@@ -6411,9 +6411,9 @@ which names every way forward. It subclasses <code>ImportError</code> as well as
 <p>Configure globally (in code, or with <code>FASTAIAGENT_PDF_MODE=vision</code>) or
 per-LLMClient, which wins:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">fa</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pdf_mode</span> <span class="o">=</span> <span class="s2">"vision"</span>          <span class="c1"># default "auto"</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">fa</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pdf_mode</span> <span class="o">=</span> <span class="s2">&quot;vision&quot;</span>          <span class="c1"># default &quot;auto&quot;</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o"</span><span class="p">,</span> <span class="n">pdf_mode</span><span class="o">=</span><span class="s2">"vision"</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span> <span class="n">pdf_mode</span><span class="o">=</span><span class="s2">&quot;vision&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>The global is read when an <code>LLMClient</code> is constructed, so set it before you
 build your clients.</p>
@@ -6422,7 +6422,7 @@ build your clients.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">fa</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_pdf_pages</span> <span class="o">=</span> <span class="mi">20</span>            <span class="c1"># default 20; FASTAIAGENT_MAX_PDF_PAGES</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Or per-LLMClient, which wins over the global:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o"</span><span class="p">,</span> <span class="n">max_pdf_pages</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span> <span class="n">max_pdf_pages</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 </code></pre></div>
 <p>When a PDF exceeds the limit, the extra pages are dropped and a warning
 is logged. For very long documents prefer <code>pdf_mode="text"</code> or build a
@@ -6430,9 +6430,9 @@ two-stage pipeline (chunk → summarise → vision pass on the relevant pages).<
 <h2 id="extract-text-directly">Extract text directly<a class="headerlink" href="#extract-text-directly" title="Permanent link">&para;</a></h2>
 <p><code>PDF.extract_text()</code> returns the joined text of every page, useful when
 chunking before a RAG pipeline:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"contract.pdf"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">pdf</span> <span class="o">=</span> <span class="n">PDF</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;contract.pdf&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">text</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">extract_text</span><span class="p">()</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">pdf</span><span class="o">.</span><span class="n">page_count</span><span class="p">(),</span> <span class="s2">"pages,"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="s2">"chars"</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">pdf</span><span class="o">.</span><span class="n">page_count</span><span class="p">(),</span> <span class="s2">&quot;pages,&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="s2">&quot;chars&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="render-pages-to-images">Render pages to images<a class="headerlink" href="#render-pages-to-images" title="Permanent link">&para;</a></h2>
 <p><code>PDF.to_page_images(dpi=150, max_pages=None)</code> returns a <code>list[Image]</code>. The
@@ -6507,10 +6507,10 @@ pricing page before turning vision mode on by default.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

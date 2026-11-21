@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6476,7 +6476,7 @@ is simpler.</p>
 </div>
 <p>The complement to <a href="../mcp-tools/">MCP Tools</a> (which lets fastaiagent <strong>consume</strong> MCP servers), this page covers the <strong>serve</strong> side.</p>
 <h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'fastaiagent[mcp]'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;fastaiagent[mcp]&#39;</span>
 </code></pre></div>
 <p>(<code>fastaiagent[mcp-server]</code>, the name before 1.92.0, still works.)</p>
 <p>The <code>mcp</code> Python package is an optional extra — importing <code>FastAIAgentMCPServer</code> before installing it raises a clear <code>ImportError</code> with install instructions.</p>
@@ -6485,14 +6485,14 @@ is simpler.</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"research_assistant"</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"Research the user's question and summarize concisely."</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o"</span><span class="p">),</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;research_assistant&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;Research the user&#39;s question and summarize concisely.&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">),</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="p">)</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">"stdio"</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">&quot;stdio&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
 </code></pre></div>
 <p>Run it as a one-shot:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>my_agent.py
@@ -6503,10 +6503,10 @@ is simpler.</p>
 <h2 id="register-with-claude-desktop">Register with Claude Desktop<a class="headerlink" href="#register-with-claude-desktop" title="Permanent link">&para;</a></h2>
 <p>Edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS) or the equivalent on your platform:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">"research-assistant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"python"</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"/absolute/path/to/my_agent.py"</span><span class="p">]</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">&quot;research-assistant&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;python&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/absolute/path/to/my_agent.py&quot;</span><span class="p">]</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="p">}</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="p">}</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">}</span>
@@ -6517,7 +6517,7 @@ is simpler.</p>
 <h2 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h2>
 <h3 id="agentas_mcp_server"><code>Agent.as_mcp_server(...)</code><a class="headerlink" href="#agentas_mcp_server" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">agent</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">transport</span><span class="o">=</span><span class="s2">"stdio"</span><span class="p">,</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">transport</span><span class="o">=</span><span class="s2">&quot;stdio&quot;</span><span class="p">,</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">expose_tools</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">expose_system_prompt</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">tool_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -6563,7 +6563,7 @@ is simpler.</p>
 <p>Returns a <code>FastAIAgentMCPServer</code> — call <code>await server.run()</code> (or use <code>asyncio.run(server.run())</code>) to start the stdio loop. The method blocks until stdin closes (which is how local MCP hosts signal shutdown).</p>
 <h3 id="chainas_mcp_server"><code>Chain.as_mcp_server(...)</code><a class="headerlink" href="#chainas_mcp_server" title="Permanent link">&para;</a></h3>
 <p>Same shape as <code>Agent.as_mcp_server</code>, minus the <code>expose_tools</code> / <code>expose_system_prompt</code> flags (chains have neither concept).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">chain</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">"stdio"</span><span class="p">,</span> <span class="n">tool_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tool_description</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">chain</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">&quot;stdio&quot;</span><span class="p">,</span> <span class="n">tool_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tool_description</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
 <p>The chain is exposed as a single MCP tool that takes <code>{"input": "..."}</code> and returns the chain's final output as text.</p>
 <h3 id="cli-fastaiagent-mcp-serve">CLI — <code>fastaiagent mcp serve</code><a class="headerlink" href="#cli-fastaiagent-mcp-serve" title="Permanent link">&para;</a></h3>
@@ -6649,14 +6649,14 @@ ran anyway.</p>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ComposableMemory</span><span class="p">,</span> <span class="n">AgentMemory</span><span class="p">,</span> <span class="n">SummaryBlock</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalKB</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o"</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">)</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">)</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"docs/"</span><span class="p">)</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;docs/&quot;</span><span class="p">)</span>
 <a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
 <a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"support_bot"</span><span class="p">,</span>
-<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"Answer product questions from the KB. Escalate if unsure."</span><span class="p">,</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;support_bot&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;Answer product questions from the KB. Escalate if unsure.&quot;</span><span class="p">,</span>
 <a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">kb</span><span class="o">.</span><span class="n">as_tool</span><span class="p">()],</span>
 <a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>    <span class="n">memory</span><span class="o">=</span><span class="n">ComposableMemory</span><span class="p">(</span>
@@ -6665,9 +6665,9 @@ ran anyway.</p>
 <a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>    <span class="p">),</span>
 <a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="p">)</span>
 <a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>
-<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
 <a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">"stdio"</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>    <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">as_mcp_server</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">&quot;stdio&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
 </code></pre></div>
 <p>From Claude Desktop this looks like one tool called <code>support_bot</code>. Claude calls it, the agent runs its KB-search tool internally, summarizes with the memory block it has configured, and returns text. Claude never sees the internal complexity.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
@@ -6751,10 +6751,10 @@ ran anyway.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

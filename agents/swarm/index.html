@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6623,46 +6623,46 @@
 <h2 id="quickstart">Quickstart<a class="headerlink" href="#quickstart" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">LLMClient</span><span class="p">,</span> <span class="n">Swarm</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">researcher</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"researcher"</span><span class="p">,</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="s2">"Research the user's topic. When you have enough material, hand off "</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        <span class="s2">"to the writer to produce the draft."</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="s2">&quot;Research the user&#39;s topic. When you have enough material, hand off &quot;</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        <span class="s2">&quot;to the writer to produce the draft.&quot;</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="p">),</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">writer</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"writer"</span><span class="p">,</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;writer&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        <span class="s2">"Turn research notes into a polished draft. After drafting, hand off "</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        <span class="s2">"to the critic for review."</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        <span class="s2">&quot;Turn research notes into a polished draft. After drafting, hand off &quot;</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        <span class="s2">&quot;to the critic for review.&quot;</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="p">),</span>
 <a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">critic</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"critic"</span><span class="p">,</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;critic&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>        <span class="s2">"Review the draft. If it needs revision, hand off back to the writer "</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>        <span class="s2">"with specific feedback. If it's good, produce the final answer."</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>        <span class="s2">&quot;Review the draft. If it needs revision, hand off back to the writer &quot;</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>        <span class="s2">&quot;with specific feedback. If it&#39;s good, produce the final answer.&quot;</span>
 <a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="p">),</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="p">)</span>
 <a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>
 <a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="n">swarm</span> <span class="o">=</span> <span class="n">Swarm</span><span class="p">(</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"content_team"</span><span class="p">,</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;content_team&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>    <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">researcher</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">critic</span><span class="p">],</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">"researcher"</span><span class="p">,</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>    <span class="n">handoffs</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>        <span class="s2">"researcher"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"writer"</span><span class="p">],</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>        <span class="s2">"writer"</span><span class="p">:</span>     <span class="p">[</span><span class="s2">"critic"</span><span class="p">],</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>        <span class="s2">"critic"</span><span class="p">:</span>     <span class="p">[</span><span class="s2">"writer"</span><span class="p">],</span>   <span class="c1"># critic may send back to writer for revision</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>        <span class="s2">&quot;researcher&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;writer&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>        <span class="s2">&quot;writer&quot;</span><span class="p">:</span>     <span class="p">[</span><span class="s2">&quot;critic&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>        <span class="s2">&quot;critic&quot;</span><span class="p">:</span>     <span class="p">[</span><span class="s2">&quot;writer&quot;</span><span class="p">],</span>   <span class="c1"># critic may send back to writer for revision</span>
 <a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>    <span class="p">},</span>
 <a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>    <span class="n">max_handoffs</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
 <a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="p">)</span>
 <a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="n">result</span> <span class="o">=</span> <span class="n">swarm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"Write a 500-word brief on large language models."</span><span class="p">)</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="n">result</span> <span class="o">=</span> <span class="n">swarm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;Write a 500-word brief on large language models.&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
@@ -6715,19 +6715,19 @@ every hop's tools, across a resume too. See
 ("Passing you to billing.") became part of the answer.</p>
 <h3 id="handoffs-allowlist"><code>handoffs</code> allowlist<a class="headerlink" href="#handoffs-allowlist" title="Permanent link">&para;</a></h3>
 <p>The default is full mesh — every agent may hand off to every other agent:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">Swarm</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"s"</span><span class="p">,</span> <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">],</span> <span class="n">entrypoint</span><span class="o">=</span><span class="s2">"a"</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># equivalent to handoffs={"a": ["b", "c"], "b": ["a", "c"], "c": ["a", "b"]}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">Swarm</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;s&quot;</span><span class="p">,</span> <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">],</span> <span class="n">entrypoint</span><span class="o">=</span><span class="s2">&quot;a&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># equivalent to handoffs={&quot;a&quot;: [&quot;b&quot;, &quot;c&quot;], &quot;b&quot;: [&quot;a&quot;, &quot;c&quot;], &quot;c&quot;: [&quot;a&quot;, &quot;b&quot;]}</span>
 </code></pre></div>
 <p>Explicit allowlists constrain routing and clarify intent:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">Swarm</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"triage"</span><span class="p">,</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;triage&quot;</span><span class="p">,</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">triage</span><span class="p">,</span> <span class="n">coder</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">support</span><span class="p">],</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">"triage"</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">&quot;triage&quot;</span><span class="p">,</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">handoffs</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="s2">"triage"</span><span class="p">:</span>  <span class="p">[</span><span class="s2">"coder"</span><span class="p">,</span> <span class="s2">"writer"</span><span class="p">,</span> <span class="s2">"support"</span><span class="p">],</span>  <span class="c1"># triage fans out</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="s2">"coder"</span><span class="p">:</span>   <span class="p">[],</span>                              <span class="c1"># specialists terminate</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="s2">"writer"</span><span class="p">:</span>  <span class="p">[],</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="s2">"support"</span><span class="p">:</span> <span class="p">[],</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="s2">&quot;triage&quot;</span><span class="p">:</span>  <span class="p">[</span><span class="s2">&quot;coder&quot;</span><span class="p">,</span> <span class="s2">&quot;writer&quot;</span><span class="p">,</span> <span class="s2">&quot;support&quot;</span><span class="p">],</span>  <span class="c1"># triage fans out</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="s2">&quot;coder&quot;</span><span class="p">:</span>   <span class="p">[],</span>                              <span class="c1"># specialists terminate</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="s2">&quot;writer&quot;</span><span class="p">:</span>  <span class="p">[],</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="s2">&quot;support&quot;</span><span class="p">:</span> <span class="p">[],</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="p">},</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
 </code></pre></div>
@@ -6748,7 +6748,7 @@ middleware that ends a run with <code>StopAgent("…", reason="handoff")</code> 
 another reason for your own stops (any other stop message is still judged by the output rules).</p>
 <h3 id="cancel-and-timeout_seconds-1930">Cancel and <code>timeout_seconds</code> (1.93.0)<a class="headerlink" href="#cancel-and-timeout_seconds-1930" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">swarm</span> <span class="o">=</span> <span class="n">Swarm</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">timeout_seconds</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span>   <span class="c1"># the whole run, every hop included</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">swarm</span><span class="o">.</span><span class="n">cancel</span><span class="p">(</span><span class="s2">"job-7"</span><span class="p">)</span>                     <span class="c1"># stop a run in progress, from any thread</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">swarm</span><span class="o">.</span><span class="n">cancel</span><span class="p">(</span><span class="s2">&quot;job-7&quot;</span><span class="p">)</span>                     <span class="c1"># stop a run in progress, from any thread</span>
 </code></pre></div>
 <p>A cancelled run returns <code>status="cancelled"</code> (<code>astream</code> ends with
 <code>StreamDone(finish_reason="cancelled")</code>); a timed-out run raises
@@ -6764,8 +6764,8 @@ recorded nothing.</p>
 <h3 id="shared-blackboard-swarmstateshared">Shared blackboard (<code>SwarmState.shared</code>)<a class="headerlink" href="#shared-blackboard-swarmstateshared" title="Permanent link">&para;</a></h3>
 <p>Handoff tools accept an optional <code>context=</code> dict whose entries merge into <code>SwarmState.shared</code> and are visible to every subsequent agent through the briefing message:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>researcher calls handoff_to_writer(
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    reason="Research complete, draft incoming",
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    context={"sources": ["arxiv:2024.12345"], "tone": "academic"},
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    reason=&quot;Research complete, draft incoming&quot;,
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    context={&quot;sources&quot;: [&quot;arxiv:2024.12345&quot;], &quot;tone&quot;: &quot;academic&quot;},
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>)
 </code></pre></div>
 <p>The writer sees <code>Current shared state: {'sources': ['arxiv:2024.12345'], 'tone': 'academic'}</code> in its briefing.</p>
@@ -6787,11 +6787,11 @@ checkpoints, so a resumed run keeps it. Handoff calls themselves are not listed.
 <p><code>swarm.astream(input)</code> yields the full stream of the currently active agent (TextDelta, ToolCallStart, ToolCallEnd, Usage). When a handoff fires, a single <code>HandoffEvent(from_agent, to_agent, reason)</code> is emitted before the target agent starts streaming:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.llm.stream</span><span class="w"> </span><span class="kn">import</span> <span class="n">TextDelta</span><span class="p">,</span> <span class="n">HandoffEvent</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">async</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">swarm</span><span class="o">.</span><span class="n">astream</span><span class="p">(</span><span class="s2">"Write a poem about bridges."</span><span class="p">):</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">async</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">swarm</span><span class="o">.</span><span class="n">astream</span><span class="p">(</span><span class="s2">&quot;Write a poem about bridges.&quot;</span><span class="p">):</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">TextDelta</span><span class="p">):</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">HandoffEvent</span><span class="p">):</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[</span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">from_agent</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">to_agent</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">reason</span><span class="si">}</span><span class="s2">]</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[</span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">from_agent</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">to_agent</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">reason</span><span class="si">}</span><span class="s2">]</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>A streamed run is one trace under a <code>swarm.&lt;name&gt;</code> root span, the same as <code>run()</code>. Before
 1.99.0 <code>astream()</code> opened no root span, so each hop was an unrelated trace locally and on
@@ -6802,7 +6802,7 @@ it unset.</p>
 <h3 id="with-agent-tools">With agent tools<a class="headerlink" href="#with-agent-tools" title="Permanent link">&para;</a></h3>
 <p>Each agent keeps its own tools. Handoff tools are <strong>added</strong> to the agent's tool list per turn — they don't replace the agent's normal tools:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">researcher</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"researcher"</span><span class="p">,</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">web_search</span><span class="p">,</span> <span class="n">read_url</span><span class="p">],</span>   <span class="c1"># still available when researcher is active</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="c1"># …plus any other Agent kwargs you normally pass</span>
@@ -6823,12 +6823,12 @@ it unset.</p>
 <a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">)</span>
 <a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>
 <a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="n">swarm</span> <span class="o">=</span> <span class="n">Swarm</span><span class="p">(</span>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"team"</span><span class="p">,</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;team&quot;</span><span class="p">,</span>
 <a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>    <span class="n">agents</span><span class="o">=</span><span class="p">[</span>
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>        <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"a"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">shared_memory</span><span class="p">),</span>
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>        <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"b"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">shared_memory</span><span class="p">),</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>        <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">shared_memory</span><span class="p">),</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>        <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">shared_memory</span><span class="p">),</span>
 <a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>    <span class="p">],</span>
-<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">"a"</span><span class="p">,</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">&quot;a&quot;</span><span class="p">,</span>
 <a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="p">)</span>
 </code></pre></div>
 <p>A swarm run is recorded as <strong>one turn</strong>: the user's original request and the final answer. The agent that hands off writes nothing, and the agent that answers records the original request rather than the "X handed off to you…" text it received. With separate memories, only the agent that answered records the turn.</p>
@@ -6837,20 +6837,20 @@ it unset.</p>
 <p>An agent that uses a <code>LocalKB</code> as a tool keeps that capability inside the swarm:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.kb</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalKB</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"product-docs"</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">"setup guides and troubleshooting"</span><span class="p">)</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"docs/"</span><span class="p">)</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">kb</span> <span class="o">=</span> <span class="n">LocalKB</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;product-docs&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;setup guides and troubleshooting&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">kb</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;docs/&quot;</span><span class="p">)</span>
 <a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>
 <a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">support</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span>
 <a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span>
 <a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">kb</span><span class="o">.</span><span class="n">as_tool</span><span class="p">()],</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"Search product-docs before answering."</span><span class="p">,</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;Search product-docs before answering.&quot;</span><span class="p">,</span>
 <a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">)</span>
 <a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>
 <a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="n">swarm</span> <span class="o">=</span> <span class="n">Swarm</span><span class="p">(</span>
-<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"triage_swarm"</span><span class="p">,</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;triage_swarm&quot;</span><span class="p">,</span>
 <a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>    <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">triage</span><span class="p">,</span> <span class="n">support</span><span class="p">,</span> <span class="n">billing</span><span class="p">],</span>
-<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">"triage"</span><span class="p">,</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>    <span class="n">entrypoint</span><span class="o">=</span><span class="s2">&quot;triage&quot;</span><span class="p">,</span>
 <a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="on-the-control-plane">On the control plane<a class="headerlink" href="#on-the-control-plane" title="Permanent link">&para;</a></h2>
@@ -6862,7 +6862,7 @@ stamped on its model calls. See
 <a href="../teams/#team-members-on-the-control-plane">Team members on the control plane</a>.</p>
 <h2 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">data</span> <span class="o">=</span> <span class="n">swarm</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># {'name': 'triage_swarm', 'agent_names': ['triage', 'support'], 'entrypoint': ..., 'handoffs': {...}, 'max_handoffs': 8}</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># {&#39;name&#39;: &#39;triage_swarm&#39;, &#39;agent_names&#39;: [&#39;triage&#39;, &#39;support&#39;], &#39;entrypoint&#39;: ..., &#39;handoffs&#39;: {...}, &#39;max_handoffs&#39;: 8}</span>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="n">restored</span> <span class="o">=</span> <span class="n">Swarm</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">agents</span><span class="o">=</span><span class="p">[</span><span class="n">triage</span><span class="p">,</span> <span class="n">support</span><span class="p">])</span>
 </code></pre></div>
@@ -6918,7 +6918,7 @@ stamped on its model calls. See
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">SwarmError</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">swarm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"..."</span><span class="p">)</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="n">swarm</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
 <a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">except</span> <span class="n">SwarmError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
 <a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="c1"># Covers: missing entrypoint, duplicate agent names, unknown peer in</span>
 <a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>    <span class="c1"># handoffs, disallowed handoff attempt, max_handoffs exceeded.</span>
@@ -7051,10 +7051,10 @@ so a resumed swarm's agent spans were emitted as unrelated orphan traces.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

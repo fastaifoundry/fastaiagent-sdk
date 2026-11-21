@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6311,25 +6311,25 @@ resumed nodes safe to re-run, see the
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chain</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Enable checkpointing (on by default)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"my-pipeline"</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"step1"</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent1</span><span class="p">)</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"step2"</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent2</span><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"step3"</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent3</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"step1"</span><span class="p">,</span> <span class="s2">"step2"</span><span class="p">)</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"step2"</span><span class="p">,</span> <span class="s2">"step3"</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;my-pipeline&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;step1&quot;</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent1</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;step2&quot;</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent2</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;step3&quot;</span><span class="p">,</span> <span class="n">agent</span><span class="o">=</span><span class="n">agent3</span><span class="p">)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;step1&quot;</span><span class="p">,</span> <span class="s2">&quot;step2&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">chain</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;step2&quot;</span><span class="p">,</span> <span class="s2">&quot;step3&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># First run — step2 might fail</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"input"</span><span class="p">:</span> <span class="s2">"data"</span><span class="p">})</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;input&quot;</span><span class="p">:</span> <span class="s2">&quot;data&quot;</span><span class="p">})</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>After each node completes, the chain state is saved to a checkpoint. The <code>execution_id</code> returned in <code>ChainResult</code> identifies the run for resume.</p>
 <h2 id="resuming-from-a-checkpoint">Resuming from a Checkpoint<a class="headerlink" href="#resuming-from-a-checkpoint" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Resume from where it failed</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">chain</span><span class="o">.</span><span class="n">resume</span><span class="p">(</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">execution_id</span><span class="o">=</span><span class="s2">"&lt;saved-execution-id&gt;"</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">modified_state</span><span class="o">=</span><span class="p">{</span><span class="s2">"retry_count"</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>  <span class="c1"># Optional: patch state before resuming</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">execution_id</span><span class="o">=</span><span class="s2">&quot;&lt;saved-execution-id&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">modified_state</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;retry_count&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>  <span class="c1"># Optional: patch state before resuming</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">)</span>
 </code></pre></div>
 <p>The chain loads the last successful checkpoint, optionally merges in your modified state, and continues from the next node.</p>
@@ -6343,12 +6343,12 @@ serve a <code>chain.resume(...)</code> request from — use <code>PostgresCheckp
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.checkpointers.postgres</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostgresCheckpointer</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Local development / single-process production:</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"flow"</span><span class="p">,</span> <span class="n">checkpointer</span><span class="o">=</span><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="n">db_path</span><span class="o">=</span><span class="s2">"/path/to/local.db"</span><span class="p">))</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;flow&quot;</span><span class="p">,</span> <span class="n">checkpointer</span><span class="o">=</span><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;/path/to/local.db&quot;</span><span class="p">))</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Multi-process production — any worker can resume any execution:</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"flow"</span><span class="p">,</span> <span class="n">checkpointer</span><span class="o">=</span><span class="n">PostgresCheckpointer</span><span class="p">(</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="s2">"postgresql://user:pass@host/db"</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">"fastaiagent"</span><span class="p">,</span>  <span class="c1"># default; pass a custom name to share one DB</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;flow&quot;</span><span class="p">,</span> <span class="n">checkpointer</span><span class="o">=</span><span class="n">PostgresCheckpointer</span><span class="p">(</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="s2">&quot;postgresql://user:pass@host/db&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;fastaiagent&quot;</span><span class="p">,</span>  <span class="c1"># default; pass a custom name to share one DB</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">))</span>
 </code></pre></div>
 <p><code>PostgresCheckpointer</code> ships under the <code>[postgres]</code> extra
@@ -6366,11 +6366,11 @@ deterministically.</p>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">store</span> <span class="o">=</span> <span class="n">SQLiteCheckpointer</span><span class="p">()</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">store</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">for</span> <span class="n">cp</span> <span class="ow">in</span> <span class="n">store</span><span class="o">.</span><span class="n">list</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">"&lt;id&gt;"</span><span class="p">):</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Node: </span><span class="si">{</span><span class="n">cp</span><span class="o">.</span><span class="n">node_id</span><span class="si">}</span><span class="s2">, State: </span><span class="si">{</span><span class="n">cp</span><span class="o">.</span><span class="n">state_snapshot</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">for</span> <span class="n">cp</span> <span class="ow">in</span> <span class="n">store</span><span class="o">.</span><span class="n">list</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">&quot;&lt;id&gt;&quot;</span><span class="p">):</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Node: </span><span class="si">{</span><span class="n">cp</span><span class="o">.</span><span class="n">node_id</span><span class="si">}</span><span class="s2">, State: </span><span class="si">{</span><span class="n">cp</span><span class="o">.</span><span class="n">state_snapshot</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">latest</span> <span class="o">=</span> <span class="n">store</span><span class="o">.</span><span class="n">get_last</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">"&lt;id&gt;"</span><span class="p">)</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Last completed: </span><span class="si">{</span><span class="n">latest</span><span class="o">.</span><span class="n">node_id</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>   <span class="c1"># "run_end" on a run that has ended</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">latest</span> <span class="o">=</span> <span class="n">store</span><span class="o">.</span><span class="n">get_last</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">&quot;&lt;id&gt;&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Last completed: </span><span class="si">{</span><span class="n">latest</span><span class="o">.</span><span class="n">node_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>   <span class="c1"># &quot;run_end&quot; on a run that has ended</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title"><code>get_last</code> on a finished run returns the terminal marker</p>
@@ -6383,15 +6383,15 @@ deterministically.</p>
 <p>The <code>Checkpointer</code> protocol also exposes <code>get_by_id</code>, <code>delete_execution</code>, and <code>prune(older_than=…)</code> for housekeeping.</p>
 <h2 id="disabling-checkpointing">Disabling Checkpointing<a class="headerlink" href="#disabling-checkpointing" title="Permanent link">&para;</a></h2>
 <p>For lightweight chains that don't need persistence:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"quick-pipeline"</span><span class="p">,</span> <span class="n">checkpoint_enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;quick-pipeline&quot;</span><span class="p">,</span> <span class="n">checkpoint_enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent._internal.errors</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChainCheckpointError</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">chain</span><span class="o">.</span><span class="n">resume</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">"nonexistent-id"</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">chain</span><span class="o">.</span><span class="n">resume</span><span class="p">(</span><span class="n">execution_id</span><span class="o">=</span><span class="s2">&quot;nonexistent-id&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">except</span> <span class="n">ChainCheckpointError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Checkpoint error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checkpoint error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
@@ -6462,10 +6462,10 @@ deterministically.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

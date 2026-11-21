@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6499,7 +6499,7 @@ tool, no export pipeline: the cases you already evaluate roll up into one
 scored run, thresholds gate the build, and a baseline catches regressions.</p>
 <p>The loop this closes:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>production trace  →  fastaiagent eval curate --filter failed  →  cases.jsonl
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>      →  @dataset("cases.jsonl") in pytest  →  gate in CI  →  merge blocked
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>      →  @dataset(&quot;cases.jsonl&quot;) in pytest  →  gate in CI  →  merge blocked
 </code></pre></div>
 <p>Failures become tests; tests become gates.</p>
 <hr />
@@ -6509,12 +6509,12 @@ for a curated JSONL file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">pytest_dataset</span> <span class="k">as</span> <span class="n">dataset</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nd">@dataset</span><span class="p">(</span><span class="s2">"cases.jsonl"</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nd">@dataset</span><span class="p">(</span><span class="s2">&quot;cases.jsonl&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_support_agent</span><span class="p">(</span><span class="n">eval_case</span><span class="p">,</span> <span class="n">evaluate_one</span><span class="p">):</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">,</span> <span class="s2">"faithfulness"</span><span class="p">])</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">evaluate_one</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">,</span> <span class="s2">&quot;faithfulness&quot;</span><span class="p">])</span>
 </code></pre></div>
 <p>Then gate the aggregate in CI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">"overall.pass_rate=0.9"</span><span class="w"> </span>--eval-max-error-rate<span class="w"> </span><span class="m">0</span>.1
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">&quot;overall.pass_rate=0.9&quot;</span><span class="w"> </span>--eval-max-error-rate<span class="w"> </span><span class="m">0</span>.1
 </code></pre></div>
 <p>A breach fails the session (exit 1) and prints exactly what missed:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>=========================== fastaiagent eval ===========================
@@ -6648,7 +6648,7 @@ fraction of <strong>errored cases</strong>, whatever made them errored.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>baseline: main pass_rate=0.9500
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>current:  (current session) pass_rate=0.8000 (delta -0.1500)
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>regressed=3 improved=0 unchanged_pass=17 unchanged_fail=0
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  regressed: "refund past 30 days" (scorers: exact_match)
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  regressed: &quot;refund past 30 days&quot; (scorers: exact_match)
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>GATE: REGRESSION — overall pass-rate dropped 0.1500 vs baseline (tolerance 0.02)
 </code></pre></div>
 <p>Baselines resolve by <code>run_id</code> first, then by <code>run_name</code>: the latest
@@ -6674,7 +6674,7 @@ plane counted the regression as passing evidence.</p>
 compared with the previous accepted <code>main</code>, never with itself. If no accepted
 <code>main</code> exists yet, this session publishes it, gated on thresholds alone, and
 says so:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>baseline 'main' has no accepted run yet: this session publishes it (gated on thresholds only)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>baseline &#39;main&#39; has no accepted run yet: this session publishes it (gated on thresholds only)
 </code></pre></div>
 <p>Runs also record git provenance (<code>git_sha</code>, <code>git_branch</code>, from the GitHub
 Actions env or <code>git rev-parse</code>) in <code>eval_runs.metadata</code>.</p>
@@ -6697,8 +6697,8 @@ baselines are unaffected.</p>
 <a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
 <a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
 <a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> python-version</span><span class="p">:</span><span class="w"> </span><span class="s">"3.12"</span><span class="w"> </span><span class="p p-Indicator">}</span>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -e ".[dev]"</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3.12&quot;</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -e &quot;.[dev]&quot;</span>
 <a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>
 <a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">      </span><span class="c1"># Restore the baseline DB published by main (see below).</span>
 <a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/cache@v4</span>
@@ -6707,7 +6707,7 @@ baselines are unaffected.</p>
 <a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">          </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">agent-ci-baseline-${{ github.base_ref }}</span>
 <a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>
 <a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest tests/evals</span>
-<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="w">             </span><span class="l l-Scalar l-Scalar-Plain">--eval-fail-under "overall.pass_rate=0.9"</span>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="w">             </span><span class="l l-Scalar l-Scalar-Plain">--eval-fail-under &quot;overall.pass_rate=0.9&quot;</span>
 <a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="w">             </span><span class="l l-Scalar l-Scalar-Plain">--eval-max-error-rate 0.1</span>
 <a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="w">             </span><span class="l l-Scalar l-Scalar-Plain">--eval-baseline main</span>
 <a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="w">             </span><span class="l l-Scalar l-Scalar-Plain">--eval-tolerance 0.02</span>
@@ -6723,7 +6723,7 @@ so pull requests have something to compare against.</p>
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>--agent<span class="w"> </span>app/agents.py:support_agent<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span>--dataset<span class="w"> </span>cases.jsonl<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span>--scorers<span class="w"> </span>exact_match,faithfulness<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--fail-under<span class="w"> </span><span class="s2">"overall.pass_rate=0.9"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--fail-under<span class="w"> </span><span class="s2">&quot;overall.pass_rate=0.9&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span>--max-error-rate<span class="w"> </span><span class="m">0</span>.1<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span>--run-name<span class="w"> </span>main<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">  </span>--json<span class="w"> </span>report.json
@@ -6764,16 +6764,16 @@ in one run, score drift and the cases-rate delta.</p>
 spec (no <code>:</code>) or a module without that attribute exits with.)</p>
 <h2 id="from-production-failure-to-gate">From production failure to gate<a class="headerlink" href="#from-production-failure-to-gate" title="Permanent link">&para;</a></h2>
 <p>The demand-validated loop, end to end:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># 1. Yesterday's failures become cases (guardrail blocks, errored runs, …)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># 1. Yesterday&#39;s failures become cases (guardrail blocks, errored runs, …)</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>fastaiagent<span class="w"> </span><span class="nb">eval</span><span class="w"> </span>curate<span class="w"> </span>--filter<span class="w"> </span>failed<span class="w"> </span>--since<span class="w"> </span><span class="m">24</span><span class="w"> </span>-o<span class="w"> </span>cases/regressions.jsonl
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># 2. Fill in expected outputs for anything marked needs_review, then gate on them</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">"overall.pass_rate=0.95"</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>pytest<span class="w"> </span>--eval-fail-under<span class="w"> </span><span class="s2">&quot;overall.pass_rate=0.95&quot;</span>
 </code></pre></div>
 <p><code>Replay</code> closes the same loop from the other side — fix a bug against a real
 trace, then freeze the fixed behavior as a case:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">rerun</span><span class="o">.</span><span class="n">save_as_test</span><span class="p">(</span><span class="s2">"cases/regressions.jsonl"</span><span class="p">,</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>                   <span class="nb">input</span><span class="o">=</span><span class="s2">"What is our refund policy?"</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">rerun</span><span class="o">.</span><span class="n">save_as_test</span><span class="p">(</span><span class="s2">&quot;cases/regressions.jsonl&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>                   <span class="nb">input</span><span class="o">=</span><span class="s2">&quot;What is our refund policy?&quot;</span><span class="p">,</span>
 <a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>                   <span class="n">expected_output</span><span class="o">=</span><span class="n">rerun</span><span class="o">.</span><span class="n">new_output</span><span class="p">,</span>
 <a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>                   <span class="n">source_trace_id</span><span class="o">=</span><span class="n">failed</span><span class="o">.</span><span class="n">trace_id</span><span class="p">)</span>
 </code></pre></div>
@@ -6782,13 +6782,13 @@ trace, then freeze the fixed behavior as a case:</p>
 <p>The gate and comparison are library functions — use them anywhere:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate</span><span class="p">,</span> <span class="n">gate</span><span class="p">,</span> <span class="n">compare_runs</span>
 <a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">results</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="s2">"cases.jsonl"</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">],</span> <span class="n">run_name</span><span class="o">=</span><span class="s2">"pr"</span><span class="p">)</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">results</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="s2">&quot;cases.jsonl&quot;</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">],</span> <span class="n">run_name</span><span class="o">=</span><span class="s2">&quot;pr&quot;</span><span class="p">)</span>
 <a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="n">report</span> <span class="o">=</span> <span class="n">gate</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">fail_under</span><span class="o">=</span><span class="p">[</span><span class="s2">"overall.pass_rate=0.9"</span><span class="p">],</span> <span class="n">max_error_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">outcome</span><span class="p">)</span>        <span class="c1"># "passed" | "failed" | "invalid"</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="n">report</span> <span class="o">=</span> <span class="n">gate</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">fail_under</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;overall.pass_rate=0.9&quot;</span><span class="p">],</span> <span class="n">max_error_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">outcome</span><span class="p">)</span>        <span class="c1"># &quot;passed&quot; | &quot;failed&quot; | &quot;invalid&quot;</span>
 <a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">describe</span><span class="p">())</span>     <span class="c1"># human-readable reasons</span>
 <a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>
-<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="n">comparison</span> <span class="o">=</span> <span class="n">compare_runs</span><span class="p">(</span><span class="s2">"main"</span><span class="p">,</span> <span class="s2">"pr"</span><span class="p">)</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="n">comparison</span> <span class="o">=</span> <span class="n">compare_runs</span><span class="p">(</span><span class="s2">&quot;main&quot;</span><span class="p">,</span> <span class="s2">&quot;pr&quot;</span><span class="p">)</span>
 <a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">pass_rate_delta</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">regressed</span><span class="p">))</span>
 <a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">case_pass_rate_delta</span><span class="p">)</span>          <span class="c1"># cases-rate delta, or None</span>
 <a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">errored</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">only_in_a</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">comparison</span><span class="o">.</span><span class="n">only_in_b</span><span class="p">))</span>
@@ -6951,10 +6951,10 @@ silent failure:</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6520,7 +6520,7 @@ that no longer exists.</p>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1">#     API key: fa_liv…ab34</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># Print shell exports for sourcing</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="nb">eval</span><span class="w"> </span><span class="s2">"</span><span class="k">$(</span>fastaiagent<span class="w"> </span>auth<span class="w"> </span>env<span class="k">)</span><span class="s2">"</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>fastaiagent<span class="w"> </span>auth<span class="w"> </span>env<span class="k">)</span><span class="s2">&quot;</span>
 <a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="c1"># -&gt; exports FASTAIAGENT_API_KEY, FASTAIAGENT_TARGET, FASTAIAGENT_PROJECT</span>
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="c1"># Remove</span>
@@ -6566,14 +6566,14 @@ key it reports there.</strong></p>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>inspect<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>&lt;step&gt;
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Fork a trace at a step, optionally modify the prompt or input, then rerun</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>fork<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>--step<span class="w"> </span><span class="m">3</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"New system prompt"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>fork<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>--step<span class="w"> </span><span class="m">3</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;New system prompt&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span>--output<span class="w"> </span>rerun.json
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>fork<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>--input<span class="w"> </span><span class="s2">"Try a different question"</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>fork<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>--input<span class="w"> </span><span class="s2">&quot;Try a different question&quot;</span>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
 <a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1"># Recorded model turns; run the read-only lookup, stub the charge</span>
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>fastaiagent<span class="w"> </span>replay<span class="w"> </span>fork<span class="w"> </span>&lt;trace_id&gt;<span class="w"> </span>--mode<span class="w"> </span>recorded<span class="w"> </span>--on-miss<span class="w"> </span>error<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span>--allow-tool<span class="w"> </span>lookup_order<span class="w"> </span>--stub<span class="w"> </span><span class="s1">'charge_card="charged 0.00"'</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span>--allow-tool<span class="w"> </span>lookup_order<span class="w"> </span>--stub<span class="w"> </span><span class="s1">&#39;charge_card=&quot;charged 0.00&quot;&#39;</span>
 </code></pre></div>
 <p><code>replay fork</code> is the CLI surface for
 <code>Replay.load(trace_id).fork_at(step).modify_prompt(...).modify_input(...).rerun()</code>.
@@ -6658,7 +6658,7 @@ and the result reports <code>tool_dispositions</code> and <code>blocked_tool_cal
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span>--agent<span class="w"> </span>app/agents.py:support_agent<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span>--dataset<span class="w"> </span>cases.jsonl<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span>--scorers<span class="w"> </span>exact_match,faithfulness<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span>--fail-under<span class="w"> </span><span class="s2">"overall.pass_rate=0.9"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span>--fail-under<span class="w"> </span><span class="s2">&quot;overall.pass_rate=0.9&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span>--max-error-rate<span class="w"> </span><span class="m">0</span>.1<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span>--run-name<span class="w"> </span>main<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">  </span>--json<span class="w"> </span>report.json
@@ -6830,11 +6830,11 @@ containers.</p>
 <p>A <code>/run</code> whose client hangs up is cancelled within half a second (since 1.93.0;
 before, an abandoned run kept calling the model and its tools to the end). A
 <code>/run/stream</code> whose client stops reading ends <code>failed</code>, as before.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>localhost:8000/run<span class="w"> </span>-d<span class="w"> </span><span class="s1">'{"input": "Refund order 42"}'</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># {"status": "paused", "execution_id": "4f1c…", "pending_interrupt": {...}, ...}</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>localhost:8000/resume<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"execution_id": "4f1c…", "approved": true, "metadata": {"resolver": "alice"}}'</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># {"status": "completed", "output": "...", ...}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>localhost:8000/run<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;input&quot;: &quot;Refund order 42&quot;}&#39;</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># {&quot;status&quot;: &quot;paused&quot;, &quot;execution_id&quot;: &quot;4f1c…&quot;, &quot;pending_interrupt&quot;: {...}, ...}</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>localhost:8000/resume<span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;execution_id&quot;: &quot;4f1c…&quot;, &quot;approved&quot;: true, &quot;metadata&quot;: {&quot;resolver&quot;: &quot;alice&quot;}}&#39;</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># {&quot;status&quot;: &quot;completed&quot;, &quot;output&quot;: &quot;...&quot;, ...}</span>
 </code></pre></div>
 <p><code>--reload</code> was removed in 1.92.0: uvicorn reloads only from an import string, and
 <code>serve</code> hands it an app object, so the flag never worked. Restart the command after a change.</p>
@@ -6919,12 +6919,12 @@ sandbox, keeps every version and exports a project. It never calls Studio's own 
 platform at 0.20.0 or later and a key with <code>studio:read</code> and <code>studio:write</code>. The whole story is in
 <a href="../platform/agent-studio/">Agent Studio from the command line and from code</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>context<span class="w"> </span>--json
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>new<span class="w"> </span>--name<span class="w"> </span><span class="s2">"Order desk"</span><span class="w"> </span>--brief<span class="w"> </span><span class="s2">"Answer order-status questions."</span><span class="w"> </span>--data<span class="w"> </span>orders.csv
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>spec<span class="w"> </span>validate<span class="w"> </span><span class="s2">"Order desk"</span><span class="w"> </span>spec.json
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>spec<span class="w"> </span>push<span class="w"> </span><span class="s2">"Order desk"</span><span class="w"> </span>spec.json<span class="w"> </span>--note<span class="w"> </span><span class="s2">"first design"</span><span class="w"> </span>--wait
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>try<span class="w"> </span><span class="s2">"Order desk"</span><span class="w"> </span><span class="s2">"What is the status of order 1003?"</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span><span class="nb">eval</span><span class="w"> </span><span class="s2">"Order desk"</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="s2">"Order desk"</span><span class="w"> </span>--out<span class="w"> </span>.
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>new<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;Order desk&quot;</span><span class="w"> </span>--brief<span class="w"> </span><span class="s2">&quot;Answer order-status questions.&quot;</span><span class="w"> </span>--data<span class="w"> </span>orders.csv
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>spec<span class="w"> </span>validate<span class="w"> </span><span class="s2">&quot;Order desk&quot;</span><span class="w"> </span>spec.json
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>spec<span class="w"> </span>push<span class="w"> </span><span class="s2">&quot;Order desk&quot;</span><span class="w"> </span>spec.json<span class="w"> </span>--note<span class="w"> </span><span class="s2">&quot;first design&quot;</span><span class="w"> </span>--wait
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span>try<span class="w"> </span><span class="s2">&quot;Order desk&quot;</span><span class="w"> </span><span class="s2">&quot;What is the status of order 1003?&quot;</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span><span class="nb">eval</span><span class="w"> </span><span class="s2">&quot;Order desk&quot;</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>fastaiagent<span class="w"> </span>studio<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="s2">&quot;Order desk&quot;</span><span class="w"> </span>--out<span class="w"> </span>.
 </code></pre></div>
 <p><code>&lt;draft&gt;</code> is a draft's id or its name. Credentials are resolved as <code>fastaiagent push</code> does (<code>--api-key</code>
 and <code>--target</code>, else <code>FASTAIAGENT_API_KEY</code> and <code>FASTAIAGENT_TARGET</code>, else what <code>fastaiagent connect</code>
@@ -7034,7 +7034,7 @@ exported code. A coding assistant is taught the loop by the <code>fastaiagent-st
 <a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Reject with a reason</span>
 <a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>fastaiagent<span class="w"> </span>resume<span class="w"> </span>refund-abc<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">    </span>--runner<span class="w"> </span>myapp.flows:build_chain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">    </span>--value<span class="w"> </span><span class="s1">'{"approved": false, "metadata": {"reason": "amount above threshold"}}'</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">    </span>--value<span class="w"> </span><span class="s1">&#39;{&quot;approved&quot;: false, &quot;metadata&quot;: {&quot;reason&quot;: &quot;amount above threshold&quot;}}&#39;</span>
 </code></pre></div>
 <p>Exits <strong>2</strong> on <code>AlreadyResumed</code> (another resumer claimed the pending row first — a deterministic outcome, not a bug).</p>
 <h3 id="fastaiagent-setup-checkpointer"><code>fastaiagent setup-checkpointer</code><a class="headerlink" href="#fastaiagent-setup-checkpointer" title="Permanent link">&para;</a></h3>
@@ -7045,12 +7045,12 @@ exported code. A coding assistant is taught the loop by the <code>fastaiagent-st
 <a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Postgres</span>
 <a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>fastaiagent<span class="w"> </span>setup-checkpointer<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">    </span>--backend<span class="w"> </span>postgres<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">"</span><span class="nv">$DATABASE_URL</span><span class="s2">"</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DATABASE_URL</span><span class="s2">&quot;</span>
 <a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>
 <a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="c1"># Custom Postgres schema (so two installs share one DB)</span>
 <a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>fastaiagent<span class="w"> </span>setup-checkpointer<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="w">    </span>--backend<span class="w"> </span>postgres<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">"</span><span class="nv">$DATABASE_URL</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DATABASE_URL</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="w">    </span>--schema<span class="w"> </span>fa_prod
 </code></pre></div>
 <p>See <a href="../durability/checkpointers/">docs/durability/checkpointers.md</a> for the full backend reference.</p>
@@ -7193,10 +7193,10 @@ SQLite directly — no UI server required.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

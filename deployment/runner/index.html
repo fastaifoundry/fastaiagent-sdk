@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6289,8 +6289,8 @@ from the plane. A real run against a local plane on <code>:20001</code>:</p>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  Runner trace -&gt; platform (Task A)
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>============================================================
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  Connected: True  domain=8ccd14b5-…  project=ab4d5161-…
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  Executing live_playground 'demo-1' (real gpt-4o-mini)…
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  status=completed  output='OK'  trace_id=19c1f4083a0409d075d8d18d7a7c3871
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  Executing live_playground &#39;demo-1&#39; (real gpt-4o-mini)…
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  status=completed  output=&#39;OK&#39;  trace_id=19c1f4083a0409d075d8d18d7a7c3871
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  Flushed exporter -&gt; POST /public/v1/traces/ingest
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  Verifying on the platform (GET /public/v1/traces/{id})…
@@ -6338,20 +6338,20 @@ reported <code>trace_id</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>fastaiagent<span class="w"> </span>runner<span class="w"> </span>--connect<span class="w"> </span>https://&lt;label&gt;-dev.api.fastaiagent.net<span class="w"> </span>--key<span class="w"> </span><span class="nv">$FASTAIAGENT_API_KEY</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--tools<span class="w"> </span>myconnectors:register
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># myconnectors.py — runs in the runner's boundary, with your LOCAL creds</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># myconnectors.py — runs in the runner&#39;s boundary, with your LOCAL creds</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">FunctionTool</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">register</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">lookup_account</span><span class="p">(</span><span class="n">account_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="n">token</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"INTERNAL_API_TOKEN"</span><span class="p">]</span>   <span class="c1"># a LOCAL secret, never shipped</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="n">token</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;INTERNAL_API_TOKEN&quot;</span><span class="p">]</span>   <span class="c1"># a LOCAL secret, never shipped</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="o">...</span>                                         <span class="c1"># call your customer-private service</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">"account_id"</span><span class="p">:</span> <span class="n">account_id</span><span class="p">,</span> <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"active"</span><span class="p">}</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"lookup_account"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_account</span><span class="p">)</span>  <span class="c1"># exposed_name == "lookup_account"</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;account_id&quot;</span><span class="p">:</span> <span class="n">account_id</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span><span class="p">}</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;lookup_account&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_account</span><span class="p">)</span>  <span class="c1"># exposed_name == &quot;lookup_account&quot;</span>
 </code></pre></div>
 <p>A real <code>tool_exec</code> dispatched to the runner (here the connector makes a local
 model call), recorded on the plane:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>execute: completed | result: {'success': True, 'result': 'OK'} | trace_id: cce3e8a4…
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>execute: completed | result: {&#39;success&#39;: True, &#39;result&#39;: &#39;OK&#39;} | trace_id: cce3e8a4…
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>command status: completed   (recorded on the plane)
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>spans: [tool.ask_llm, agent.connector, llm.openai.gpt-4o-mini]
 </code></pre></div>
@@ -6416,10 +6416,10 @@ model call), recorded on the plane:</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6307,12 +6307,12 @@ the errored case still counts against the candidate's score (see
 <h2 id="quickstart">Quickstart<a class="headerlink" href="#quickstart" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"capitals"</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You answer questions."</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">())</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;capitals&quot;</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You answer questions.&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">())</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">report</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">agent</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="s2">"cases.jsonl"</span><span class="p">,</span>                 <span class="c1"># Dataset | path | list[dict] with input/expected_output</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">],</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="s2">&quot;cases.jsonl&quot;</span><span class="p">,</span>                 <span class="c1"># Dataset | path | list[dict] with input/expected_output</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">],</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span><span class="n">max_iterations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">patience</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
@@ -6408,15 +6408,15 @@ unless you pass <code>allow_writable_memory=True</code> (accepting the bleed).</
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You answer billing questions."</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You answer billing questions.&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(),</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">memory</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">Memory</span><span class="p">(</span><span class="n">agent_id</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="k">lambda</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">user_id</span><span class="p">,</span> <span class="n">window</span><span class="o">=</span><span class="mi">20</span><span class="p">),</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">memory</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">Memory</span><span class="p">(</span><span class="n">agent_id</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="k">lambda</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">ctx</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">user_id</span><span class="p">,</span> <span class="n">window</span><span class="o">=</span><span class="mi">20</span><span class="p">),</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">)</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">report</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">agent</span><span class="p">,</span> <span class="s2">"cases.jsonl"</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">"exact_match"</span><span class="p">],</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span><span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">"instructions"</span><span class="p">,</span> <span class="s2">"fewshot"</span><span class="p">,</span> <span class="s2">"memory"</span><span class="p">)),</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">agent</span><span class="p">,</span> <span class="s2">&quot;cases.jsonl&quot;</span><span class="p">,</span> <span class="n">scorers</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;exact_match&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">config</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span><span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;instructions&quot;</span><span class="p">,</span> <span class="s2">&quot;fewshot&quot;</span><span class="p">,</span> <span class="s2">&quot;memory&quot;</span><span class="p">)),</span>
 <a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="p">)</span>
 <a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">better</span> <span class="o">=</span> <span class="n">report</span><span class="o">.</span><span class="n">apply_to</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>   <span class="c1"># better.memory is a Memory, one window per user</span>
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
@@ -6426,7 +6426,7 @@ unless you pass <code>allow_writable_memory=True</code> (accepting the bleed).</
 <a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>    <span class="n">user_id</span><span class="p">:</span> <span class="nb">str</span>
 <a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
 <a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="n">better</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"Why was I charged twice?"</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">RunContext</span><span class="p">(</span><span class="n">state</span><span class="o">=</span><span class="n">Session</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="s2">"alice"</span><span class="p">)))</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="n">better</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;Why was I charged twice?&quot;</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">RunContext</span><span class="p">(</span><span class="n">state</span><span class="o">=</span><span class="n">Session</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="s2">&quot;alice&quot;</span><span class="p">)))</span>
 </code></pre></div>
 <p>A runnable version, with the memory lever over facts in the agent's own store: <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/101_optimize_memory_agent.py"><code>examples/101_optimize_memory_agent.py</code></a>.</p>
 <p>What carries over and what is fresh:</p>
@@ -6469,7 +6469,7 @@ unless you pass <code>allow_writable_memory=True</code> (accepting the bleed).</
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">patience</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>                  <span class="c1"># stop after N non-improving rounds</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">target_score</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>          <span class="c1"># stop early once dev reaches this</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">candidates_per_iteration</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="c1"># proposals per round</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">min_delta</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>             <span class="c1"># improvement smaller than this = "no improvement"</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">min_delta</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>             <span class="c1"># improvement smaller than this = &quot;no improvement&quot;</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">splits</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">),</span>   <span class="c1"># train / dev / holdout</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">holdout_regression_tol</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="c1"># revert if holdout drops more than this</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>                     <span class="c1"># deterministic split</span>
@@ -6478,7 +6478,7 @@ unless you pass <code>allow_writable_memory=True</code> (accepting the bleed).</
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">max_judge_calls</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>       <span class="c1"># hard cap on model-backed scorer calls (see Cost)</span>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">selection_judge</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>       <span class="c1"># an LLM judge used *inside* the loop</span>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">audit_judge</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>           <span class="c1"># an LLM judge used *only* on the holdout guard</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">"instructions"</span><span class="p">,),</span>   <span class="c1"># default: prompt only — add "fewshot" and/or "memory"</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">levers</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;instructions&quot;</span><span class="p">,),</span>   <span class="c1"># default: prompt only — add &quot;fewshot&quot; and/or &quot;memory&quot;</span>
 <a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="n">allow_writable_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>  <span class="c1"># opt in to memory that writes during a run (bleed risk)</span>
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="p">)</span>
 </code></pre></div>
@@ -6490,8 +6490,8 @@ reward-hacking waiting to happen. Pass distinct judges:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.eval</span><span class="w"> </span><span class="kn">import</span> <span class="n">GEval</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">cfg</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">OptimizeConfig</span><span class="p">(</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">selection_judge</span><span class="o">=</span><span class="n">GEval</span><span class="p">(</span><span class="n">criteria</span><span class="o">=</span><span class="s2">"answer quality"</span><span class="p">),</span>         <span class="c1"># drives accept/reject</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">audit_judge</span><span class="o">=</span><span class="n">GEval</span><span class="p">(</span><span class="n">criteria</span><span class="o">=</span><span class="s2">"answer quality"</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"audit"</span><span class="p">,</span>  <span class="c1"># different prompt/model</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">selection_judge</span><span class="o">=</span><span class="n">GEval</span><span class="p">(</span><span class="n">criteria</span><span class="o">=</span><span class="s2">&quot;answer quality&quot;</span><span class="p">),</span>         <span class="c1"># drives accept/reject</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">audit_judge</span><span class="o">=</span><span class="n">GEval</span><span class="p">(</span><span class="n">criteria</span><span class="o">=</span><span class="s2">&quot;answer quality&quot;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;audit&quot;</span><span class="p">,</span>  <span class="c1"># different prompt/model</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>                      <span class="n">evaluation_steps</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">]),</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">)</span>
 </code></pre></div>
@@ -6603,8 +6603,8 @@ so <code>optimize(..., persist=False)</code> writes nothing to <code>optimize_ru
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span>--scorers<span class="w"> </span>exact_match<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span>--max-iterations<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span>--levers<span class="w"> </span>instructions,fewshot<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span>--judge<span class="w"> </span><span class="s2">"is the answer correct and concise"</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span>--audit-judge<span class="w"> </span><span class="s2">"is the answer correct, complete and concise"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span>--judge<span class="w"> </span><span class="s2">&quot;is the answer correct and concise&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span>--audit-judge<span class="w"> </span><span class="s2">&quot;is the answer correct, complete and concise&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span>--out<span class="w"> </span>winning_prompt.txt
 </code></pre></div>
 <ul>
@@ -6706,10 +6706,10 @@ stop early on noise.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

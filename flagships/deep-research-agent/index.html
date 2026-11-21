@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6412,7 +6412,7 @@
 <p>A single <code>WriteAgent</code> receives the brief plus all <code>ResearchFindings</code> and composes the final Markdown report in one LLM call. No iteration, no revision loop — the eval suite checks citation coverage post-hoc.</p>
 <p>The <code>deep_research.write</code> span carries lightweight report metadata (length, citation count).</p>
 <h2 id="trace-shape">Trace shape<a class="headerlink" href="#trace-shape" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deep_research.session         ← template.kind="deep-research", topic, plan
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>deep_research.session         ← template.kind=&quot;deep-research&quot;, topic, plan
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  ├── deep_research.scope     ← ResearchBrief (JSON)
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  ├── deep_research.research  ← ResearchFindings (parallel × N)
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  └── deep_research.write     ← report metadata
@@ -6422,23 +6422,23 @@
 <p>Inspect via the local UI or directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Find every deep-research run by template marker</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>sqlite3<span class="w"> </span>.fastaiagent/local.db<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="s2">"SELECT trace_id, json_extract(attributes, '\$.fastaiagent.research.topic')</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="s2">&quot;SELECT trace_id, json_extract(attributes, &#39;\$.fastaiagent.research.topic&#39;)</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="s2">   FROM spans</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="s2">   WHERE json_extract(attributes, '\$.fastaiagent.template.kind') = 'deep-research';"</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="s2">   WHERE json_extract(attributes, &#39;\$.fastaiagent.template.kind&#39;) = &#39;deep-research&#39;;&quot;</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Same listing via the REST API</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://127.0.0.1:7843/api/traces?last_hours=24'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'.rows[] | select(.name == "deep_research.session")'</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">&#39;http://127.0.0.1:7843/api/traces?last_hours=24&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.rows[] | select(.name == &quot;deep_research.session&quot;)&#39;</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># Drill into one trace's structured payloads</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://127.0.0.1:7843/api/traces/&lt;trace_id&gt;'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'.spans[] | select(.name | startswith("deep_research")) | {name, attrs: .attributes}'</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># Drill into one trace&#39;s structured payloads</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">&#39;http://127.0.0.1:7843/api/traces/&lt;trace_id&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.spans[] | select(.name | startswith(&quot;deep_research&quot;)) | {name, attrs: .attributes}&#39;</span>
 </code></pre></div>
 <h2 id="running">Running<a class="headerlink" href="#running" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">cd</span><span class="w"> </span>examples/deep-research-agent
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">TAVILY_API_KEY</span><span class="o">=</span>...<span class="w">               </span><span class="c1"># optional — falls back to mock</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>python<span class="w"> </span>agent.py<span class="w"> </span>--topic<span class="w"> </span><span class="s2">"Current state of MCP adoption in 2026"</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>python<span class="w"> </span>agent.py<span class="w"> </span>--topic<span class="w"> </span><span class="s2">&quot;Current state of MCP adoption in 2026&quot;</span>
 </code></pre></div>
 <p>The companion scripts:
 - <code>streaming_demo.py</code> — per-phase progress trace with timings
@@ -6554,10 +6554,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

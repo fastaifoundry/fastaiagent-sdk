@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6187,19 +6187,19 @@ with the same <code>project_id</code>.</p>
 in a fresh directory creates:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./.fastaiagent/
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── config.toml      # project_id, created_at, sdk_version
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── .gitignore       # ignores local.db so the DB doesn't get committed
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── .gitignore       # ignores local.db so the DB doesn&#39;t get committed
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>└── local.db         # SQLite, the trace + checkpoint store
 </code></pre></div>
 <p><code>config.toml</code> looks like:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">project_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my-project"</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">created_at</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"2026-04-29"</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">sdk_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"1.2.0"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">project_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-project&quot;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">created_at</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;2026-04-29&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">sdk_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;1.2.0&quot;</span>
 </code></pre></div>
 <p>The <code>project_id</code> defaults to the current directory's name. Edit
 <code>config.toml</code> to choose a different one. Multiple project directories
 can coexist:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/projects/refund-bot/.fastaiagent/config.toml   → project_id = "refund-bot"
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>/projects/weather-bot/.fastaiagent/config.toml  → project_id = "weather-bot"
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/projects/refund-bot/.fastaiagent/config.toml   → project_id = &quot;refund-bot&quot;
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>/projects/weather-bot/.fastaiagent/config.toml  → project_id = &quot;weather-bot&quot;
 </code></pre></div>
 <p>Both can point at the same SQLite file (<code>FASTAIAGENT_LOCAL_DB</code>); each
 <code>fastaiagent ui</code> session shows only that project's data.</p>
@@ -6208,7 +6208,7 @@ filesystem. Folder and config creation happen lazily, on the first
 SDK call that actually writes a record.</p>
 <h2 id="opt-out">Opt out<a class="headerlink" href="#opt-out" title="Permanent link">&para;</a></h2>
 <p>To skip local storage entirely:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">trace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">trace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
 <p>No spans are written, no <code>.fastaiagent/</code> directory is created.</p>
 <h2 id="what-gets-stamped">What gets stamped<a class="headerlink" href="#what-gets-stamped" title="Permanent link">&para;</a></h2>
@@ -6336,10 +6336,10 @@ also covers:</p>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Read the active project</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">get_project_id</span><span class="p">())</span>   <span class="c1"># "my-project"</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">get_project_id</span><span class="p">())</span>   <span class="c1"># &quot;my-project&quot;</span>
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1"># Override at runtime (tests use this for isolation)</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="n">set_project_id</span><span class="p">(</span><span class="s2">"test-fixture"</span><span class="p">)</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="n">set_project_id</span><span class="p">(</span><span class="s2">&quot;test-fixture&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
 <a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1"># Force the .fastaiagent/ lifecycle</span>
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="n">config</span> <span class="o">=</span> <span class="n">load_or_create</span><span class="p">()</span>
@@ -6417,10 +6417,10 @@ against the real SDK + real FastAPI + real SQLite (no mocks).</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

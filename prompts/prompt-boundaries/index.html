@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6411,13 +6411,13 @@
 <li><strong>The link</strong>: <code>Agent(system_prompt=prompt)</code> with the <em>object</em> runs its template and stamps <code>fastaiagent.prompt.name</code> and <code>.version</code> on every <code>llm.*</code> span. The formatted string carries nothing.</li>
 </ul>
 <p>You declare all of it in a few lines:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">reg</span> <span class="o">=</span> <span class="n">PromptRegistry</span><span class="p">()</span>                                       <span class="c1"># the project's local.db</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">reg</span><span class="o">.</span><span class="n">register_fragment</span><span class="p">(</span><span class="s2">"tone"</span><span class="p">,</span> <span class="s2">"Be professional and concise."</span><span class="p">)</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">reg</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">"You help {{company}} customers. {{@tone}}"</span><span class="p">)</span>  <span class="c1"># v1</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">reg</span><span class="o">.</span><span class="n">set_alias</span><span class="p">(</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">"production"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">reg</span> <span class="o">=</span> <span class="n">PromptRegistry</span><span class="p">()</span>                                       <span class="c1"># the project&#39;s local.db</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">reg</span><span class="o">.</span><span class="n">register_fragment</span><span class="p">(</span><span class="s2">&quot;tone&quot;</span><span class="p">,</span> <span class="s2">&quot;Be professional and concise.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">reg</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">&quot;You help {{company}} customers. {{@tone}}&quot;</span><span class="p">)</span>  <span class="c1"># v1</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">reg</span><span class="o">.</span><span class="n">set_alias</span><span class="p">(</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">&quot;production&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">prompt</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">"production"</span><span class="p">)</span>            <span class="c1"># fragments resolved, {{company}} open</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"support"</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="n">prompt</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span> <span class="c1"># the object: runs are linked</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">prompt</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">&quot;production&quot;</span><span class="p">)</span>            <span class="c1"># fragments resolved, {{company}} open</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;support&quot;</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="n">prompt</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">)</span> <span class="c1"># the object: runs are linked</span>
 </code></pre></div>
 <p>The rest of this page is what those four things have to get right.</p>
 <p><strong>Code:</strong> the registry is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py"><code>prompt/registry.py</code></a>, the rows are <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/storage.py"><code>prompt/storage.py</code></a>, the object is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/prompt.py"><code>prompt/prompt.py</code></a>; the agent takes the object in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py"><code>agent/agent.py</code></a> (<code>Agent.__init__</code>).</p>
@@ -6435,18 +6435,18 @@
 </ul>
 <p>Proof 1 registers a fragment that carries a variable, and a prompt that references one fragment that exists and one that doesn't:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>── what register() stored
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>template : 'Hello {{name}}, welcome to {{company}}. {{@tone}} {{@legal}}'
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>variables: ['company', 'name']
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>template : &#39;Hello {{name}}, welcome to {{company}}. {{@tone}} {{@legal}}&#39;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>variables: [&#39;company&#39;, &#39;name&#39;]
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>── what load() returns — fragments resolved, variables still open
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>template : 'Hello {{name}}, welcome to {{company}}. Be {{tone}} and concise. {{@legal}}'
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>variables: ['company', 'name', 'tone']
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>template : &#39;Hello {{name}}, welcome to {{company}}. Be {{tone}} and concise. {{@legal}}&#39;
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>variables: [&#39;company&#39;, &#39;name&#39;, &#39;tone&#39;]
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>── what format() produces
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>format(name, company)      : 'Hello Dana, welcome to Acme. Be {{tone}} and concise. {{@legal}}'
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>left in the text, verbatim : ['{{tone}}', '{{@legal}}']
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>format(name, company, tone): 'Hello Dana, welcome to Acme. Be warm and concise. {{@legal}}'
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>left in the text, verbatim : ['{{@legal}}']
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>format(name, company)      : &#39;Hello Dana, welcome to Acme. Be {{tone}} and concise. {{@legal}}&#39;
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>left in the text, verbatim : [&#39;{{tone}}&#39;, &#39;{{@legal}}&#39;]
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>format(name, company, tone): &#39;Hello Dana, welcome to Acme. Be warm and concise. {{@legal}}&#39;
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>left in the text, verbatim : [&#39;{{@legal}}&#39;]
 </code></pre></div>
 <p>The fragment resolved at load and brought its own variable with it; the variable resolved at format. The missing fragment and the unpassed variable both reached the final text. <strong>Compare <code>prompt.variables</code> with what you pass before you run</strong>, or the model will be asked to be <code>{{tone}}</code>.</p>
 <p><strong>Code:</strong> <code>_resolve_fragments</code> and <code>load</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py"><code>prompt/registry.py</code></a>; <code>format</code> and <code>_extract_variables</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/prompt.py"><code>prompt/prompt.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/prompts/proofs/proof_1_placeholders.py"><code>proof_1_placeholders.py</code></a>; <code>test_format_missing_variable</code> and <code>test_unresolved_fragment_stays</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_prompt.py"><code>tests/test_prompt.py</code></a> pin the two edges.</p>
@@ -6468,7 +6468,7 @@
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>load()                 → v 2
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>load(alias=production) → v 1
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>after a third register : latest v 3 · production still v 1
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>list()                 : [{'name': 'greeting', 'latest_version': 3, 'versions': 3}]
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>list()                 : [{&#39;name&#39;: &#39;greeting&#39;, &#39;latest_version&#39;: 3, &#39;versions&#39;: 3}]
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>── diff(1, 2)
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>--- greeting v1
@@ -6478,12 +6478,12 @@
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>── register(version=1) on an existing v1
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>same text  → v 1 (a no-op)
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>other text → ValueError: Prompt 'greeting' already has a version 1 with a different template. Versions are immutable: omit version= to add the next one (v4), or delete the prompt first if you really mean to rewrite its history.
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>v1 still reads         : 'Hello {{name}}!'
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>production (→ v1) reads: 'Hello {{name}}!'
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>other text → ValueError: Prompt &#39;greeting&#39; already has a version 1 with a different template. Versions are immutable: omit version= to add the next one (v4), or delete the prompt first if you really mean to rewrite its history.
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>v1 still reads         : &#39;Hello {{name}}!&#39;
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>production (→ v1) reads: &#39;Hello {{name}}!&#39;
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>── seeding an older number keeps the latest right
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>list()                 : [{'name': 'greeting', 'latest_version': 5, 'versions': 5}] · load() → v 5
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>list()                 : [{&#39;name&#39;: &#39;greeting&#39;, &#39;latest_version&#39;: 5, &#39;versions&#39;: 5}] · load() → v 5
 </code></pre></div>
 <p>A version is frozen, and an alias pinned to it serves the text it was pinned to, whatever is registered afterwards. The explicit <code>version=</code> path is for seeding a known number; it can add a row, never replace one.</p>
 <div class="admonition note">
@@ -6505,14 +6505,14 @@
 </ul>
 <p>Proof 3 edits a fragment between two loads of the same v1, then runs both through an agent on the SDK's <code>TestModel</code> and reads the spans:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>── one prompt version, two different texts
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>before the edit: v1  'You help customers. Be formal.'
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>after the edit : v1  'You help customers. Be casual and brief.'
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>before the edit: v1  &#39;You help customers. Be formal.&#39;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>after the edit : v1  &#39;You help customers. Be casual and brief.&#39;
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>diff(1, 1)     : (no template changes)
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>list()         : [{'name': 'support', 'latest_version': 1, 'versions': 1}]
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>list()         : [{&#39;name&#39;: &#39;support&#39;, &#39;latest_version&#39;: 1, &#39;versions&#39;: 1}]
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>── what each run's trace recorded
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>prompt.version=1  system prompt sent: ['You help customers. Be formal.']
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>prompt.version=1  system prompt sent: ['You help customers. Be casual and brief.']
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>── what each run&#39;s trace recorded
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>prompt.version=1  system prompt sent: [&#39;You help customers. Be formal.&#39;]
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>prompt.version=1  system prompt sent: [&#39;You help customers. Be casual and brief.&#39;]
 </code></pre></div>
 <p>A version pins the template, not the text. If you need to know exactly what a run was sent, read the span, not the version. Local capture is always full fidelity; the <a href="#6-between-your-laptop-and-the-plane-local-rows-governed-slugs">export policy</a> decides what leaves the machine.</p>
 <p><strong>Code:</strong> <code>save_fragment</code> (<code>ON CONFLICT … DO UPDATE</code>) in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/storage.py"><code>prompt/storage.py</code></a>; <code>_resolve_fragments</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py"><code>prompt/registry.py</code></a>; the span's request messages are set by <code>set_genai_attributes</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/span.py"><code>trace/span.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/prompts/proofs/proof_3_fragments.py"><code>proof_3_fragments.py</code></a>; <code>test_fragment_overwrite</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_prompt.py"><code>tests/test_prompt.py</code></a> pins the upsert.</p>
@@ -6531,14 +6531,14 @@
 </ul>
 <p>Proof 4 runs on the SDK's offline models and reads the spans:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>── the Prompt object: every path is stamped
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>run()    : ['triage v2']
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>astream(): ['triage v2']
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>run()    : [&#39;triage v2&#39;]
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>astream(): [&#39;triage v2&#39;]
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>── the formatted string: nothing to stamp
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>run()    : ['(no prompt)']
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>run()    : [&#39;(no prompt)&#39;]
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>── an agent inside a tool stamps its own prompt
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>llm spans, in order: ['triage v2', 'summarizer v1', 'triage v2']
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>llm spans, in order: [&#39;triage v2&#39;, &#39;summarizer v1&#39;, &#39;triage v2&#39;]
 </code></pre></div>
 <p>The outer agent called a tool that ran an inner agent with its own prompt; three spans, each with the prompt that produced it. That is what the Prompts page reads:</p>
 <p><img alt="The Local UI's prompt editor on the triage flagship's v2: the versions list, the template, and the lineage panel listing the traces and the eval runs that used this prompt" src="../../ui/screenshots/autollm-loop-07-prompt-lineage.png" />
@@ -6559,7 +6559,7 @@
 <p>Proof 5 registers two versions of a ticket-routing prompt, v1 with no rules and v2 with explicit ones, and evaluates both on ten tickets with <code>gpt-4.1-mini</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>── v1 on 10 tickets (gpt-4.1-mini)
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>pass rate 0.90
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  ✗ "I can't log in; the 2FA code never arrives.": got 'technical', expected 'account'
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  ✗ &quot;I can&#39;t log in; the 2FA code never arrives.&quot;: got &#39;technical&#39;, expected &#39;account&#39;
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>── v2 on 10 tickets (gpt-4.1-mini)
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>pass rate 1.00
@@ -6584,22 +6584,22 @@
 </ul>
 <p>No control plane was reachable when this page's proofs ran, so proof 6 shows what the SDK does on its side of the line: it never contacts a plane, and the last section builds a <code>Prompt</code> the way the registry builds one from the plane's reply:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>── a local registry is rows in one local.db
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>registry A holds          : ['support-prompt']
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>registry B, another folder: Prompt 'support-prompt' not found
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>a new process, A's folder : v1 'You are the support agent for {{company}}.'
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>registry A holds          : [&#39;support-prompt&#39;]
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>registry B, another folder: Prompt &#39;support-prompt&#39; not found
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>a new process, A&#39;s folder : v1 &#39;You are the support agent for {{company}}.&#39;
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>── not connected: get() is local, the plane paths refuse
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>get(slug)                 : 'You are the support agent for {{company}}.' · source = None
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>get(source='platform')    : PlatformNotConnectedError: Not connected to platform. Call fa.connect() first.
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>get(slug)                 : &#39;You are the support agent for {{company}}.&#39; · source = None
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>get(source=&#39;platform&#39;)    : PlatformNotConnectedError: Not connected to platform. Call fa.connect() first.
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>publish(...)              : PlatformNotConnectedError: Not connected to platform. Call fa.connect() first.
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>── what a pushed agent sends
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>local Prompt   → prompt_slug: None · system_prompt: 'You are the support agent for {{company}}.'
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>prompt_slug=   → prompt_slug: support-prompt · system_prompt: ''
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>local Prompt   → prompt_slug: None · system_prompt: &#39;You are the support agent for {{company}}.&#39;
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>prompt_slug=   → prompt_slug: support-prompt · system_prompt: &#39;&#39;
 <a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>── a plane prompt, as the registry builds one from the plane's reply
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>── a plane prompt, as the registry builds one from the plane&#39;s reply
 <a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>to_dict() prompt_slug     : support-prompt (auto-linked)
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>llm span                  : {'prompt.name': 'support-prompt', 'prompt.slug': 'support-prompt', 'prompt.version': 3, 'prompt.environment': 'production'}
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>llm span                  : {&#39;prompt.name&#39;: &#39;support-prompt&#39;, &#39;prompt.slug&#39;: &#39;support-prompt&#39;, &#39;prompt.version&#39;: 3, &#39;prompt.environment&#39;: &#39;production&#39;}
 </code></pre></div>
 <p>The split holds: the SDK stores, resolves and links; the plane governs. For the plane's half, publishing, environments and the console, see <a href="../#platform-prompt-registry">Platform Prompt Registry</a> and <a href="../../platform/#prompt-registry">Platform Connection</a>.</p>
 <p><strong>Code:</strong> <code>get</code>, <code>_fetch_from_platform</code> (the cache, <code>_DEFAULT_CACHE_TTL</code>) and <code>publish</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py"><code>prompt/registry.py</code></a>; <code>Agent.to_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py"><code>agent/agent.py</code></a>; the plane endpoints are in <a href="../../internals/platform-api/#feature-prompt-registry-platform-path">Platform API Internals</a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/prompts/proofs/proof_6_plane_side.py"><code>proof_6_plane_side.py</code></a>.</p>
@@ -6702,10 +6702,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

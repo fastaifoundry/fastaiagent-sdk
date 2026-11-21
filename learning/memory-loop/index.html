@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6222,8 +6222,8 @@
 <h2 id="the-pieces">The pieces<a class="headerlink" href="#the-pieces" title="Permanent link">&para;</a></h2>
 <h3 id="1-memorystore-persistence">1. <code>MemoryStore</code> — persistence<a class="headerlink" href="#1-memorystore-persistence" title="Permanent link">&para;</a></h3>
 <p><a href="../../api-reference/"><code>fastaiagent.learn.MemoryStore</code></a> is a thin wrapper around the new <code>learned_memory</code> table. It exposes:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">store</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Fact</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span> <span class="n">fact</span><span class="o">=</span><span class="s2">"…"</span><span class="p">))</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">store</span><span class="o">.</span><span class="n">list_active</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">store</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Fact</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span> <span class="n">fact</span><span class="o">=</span><span class="s2">&quot;…&quot;</span><span class="p">))</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">store</span><span class="o">.</span><span class="n">list_active</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">store</span><span class="o">.</span><span class="n">supersede</span><span class="p">(</span><span class="n">old_id</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">new_id</span><span class="o">=</span><span class="mi">34</span><span class="p">)</span>
 </code></pre></div>
 <p>Inserts are idempotent: re-adding the same <code>(scope, scope_id, fact, project_id)</code> returns the existing row id. To replace a fact rather than duplicate it, call <code>supersede</code> — the old row is preserved with <code>superseded_by</code> pointing at the new row, so the audit chain stays intact.</p>
@@ -6236,12 +6236,12 @@
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.learn</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_facts_from_trace</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.trace.storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">TraceStore</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">trace</span> <span class="o">=</span> <span class="n">TraceStore</span><span class="p">()</span><span class="o">.</span><span class="n">get_trace</span><span class="p">(</span><span class="s2">"…trace_id…"</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">trace</span> <span class="o">=</span> <span class="n">TraceStore</span><span class="p">()</span><span class="o">.</span><span class="n">get_trace</span><span class="p">(</span><span class="s2">&quot;…trace_id…&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">facts</span> <span class="o">=</span> <span class="n">extract_facts_from_trace</span><span class="p">(</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">trace</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">),</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">scope</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">scope_id</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">),</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">scope_id</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">)</span>
 </code></pre></div>
 <p>Returns a list of candidate <code>Fact</code> objects (not yet stored). The extractor is best-effort — bad LLM output yields <code>[]</code> rather than raising. PII guidance is baked into the prompt; the CLI also gates <code>user</code> / <code>project</code> scopes behind <code>--allow-personal</code>.</p>
@@ -6251,11 +6251,11 @@
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">fa</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">results</span> <span class="o">=</span> <span class="n">run_extraction</span><span class="p">(</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">),</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">),</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">store</span><span class="o">=</span><span class="n">MemoryStore</span><span class="p">(),</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">scope</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">scope_id</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">agent_name</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span>   <span class="c1"># only traces in which my-agent ran</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">scope_id</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">agent_name</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span>   <span class="c1"># only traces in which my-agent ran</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">last_hours</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">new</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">new_ids</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">)</span>   <span class="c1"># facts inserted by this run</span>
@@ -6267,10 +6267,10 @@
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">ComposableMemory</span><span class="p">(</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">primary</span><span class="o">=</span><span class="n">fa</span><span class="o">.</span><span class="n">AgentMemory</span><span class="p">(),</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">blocks</span><span class="o">=</span><span class="p">[</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>        <span class="n">PersistentFactBlock</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span> <span class="n">max_facts</span><span class="o">=</span><span class="mi">30</span><span class="p">),</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>        <span class="n">PersistentFactBlock</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span> <span class="n">scope_id</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span> <span class="n">max_facts</span><span class="o">=</span><span class="mi">30</span><span class="p">),</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="p">],</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">)</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"my-agent"</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"…"</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">fa</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;my-agent&quot;</span><span class="p">,</span> <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;…&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span>
 </code></pre></div>
 <p>Every <code>agent.arun(...)</code> now sees a <code>Learned facts (agent:my-agent):</code> system message right after the system prompt, with the active facts (newest first, capped at <code>max_facts</code>). The block is read-only at runtime; the facts it reads come from any of the producers above.</p>
 <h2 id="conflict-resolution">Conflict resolution<a class="headerlink" href="#conflict-resolution" title="Permanent link">&para;</a></h2>
@@ -6288,7 +6288,7 @@
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Refused without opt-in:</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>fastaiagent<span class="w"> </span>learn<span class="w"> </span>--scope<span class="w"> </span>user<span class="w"> </span>--scope-id<span class="w"> </span>user-42
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># → "Refusing to extract user/project-scoped facts without --allow-personal."</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># → &quot;Refusing to extract user/project-scoped facts without --allow-personal.&quot;</span>
 </code></pre></div>
 <p>The extraction prompt also instructs the model to skip names, emails, phone numbers, and addresses. This is best-effort, not a guarantee — review extracted facts before re-injecting them in production.</p>
 <h2 id="inspecting-the-table">Inspecting the table<a class="headerlink" href="#inspecting-the-table" title="Permanent link">&para;</a></h2>
@@ -6300,7 +6300,7 @@
 </code></pre></div>
 <p>Or directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sqlite3<span class="w"> </span>.fastaiagent/local.db<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="s2">"SELECT id, scope, scope_id, fact, superseded_by FROM learned_memory ORDER BY created_at DESC LIMIT 20;"</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="s2">&quot;SELECT id, scope, scope_id, fact, superseded_by FROM learned_memory ORDER BY created_at DESC LIMIT 20;&quot;</span>
 </code></pre></div>
 <h2 id="whats-not-in-v1">What's not in v1<a class="headerlink" href="#whats-not-in-v1" title="Permanent link">&para;</a></h2>
 <ul>
@@ -6370,10 +6370,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

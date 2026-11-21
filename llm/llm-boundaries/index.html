@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6410,8 +6410,8 @@
 <li><strong>Parse.</strong> The provider's JSON becomes one <code>LLMResponse</code>: <code>content</code>, <code>tool_calls</code> with <code>arguments</code> already a <code>dict</code>, <code>usage</code> with <code>prompt_tokens</code> and <code>completion_tokens</code>, a <code>finish_reason</code> from one vocabulary, <code>latency_ms</code> measured on your side, and <code>parsed</code> when you asked for a type.</li>
 </ul>
 <p>You get all of it from one object:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4.1-mini"</span><span class="p">)</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">UserMessage</span><span class="p">(</span><span class="s2">"Reply with the single word PONG."</span><span class="p">)])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">complete</span><span class="p">([</span><span class="n">UserMessage</span><span class="p">(</span><span class="s2">&quot;Reply with the single word PONG.&quot;</span><span class="p">)])</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">finish_reason</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">usage</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">latency_ms</span>
 </code></pre></div>
 <p>The rest of this page is what that sandwich has to get right.</p>
@@ -6429,20 +6429,20 @@
 <li><strong>Auth is per wire</strong>: <code>Authorization: Bearer</code> for the OpenAI-compatible wires, <code>x-api-key</code> plus <code>anthropic-version</code> for Anthropic.</li>
 </ul>
 <p>Proof 1 sends one conversation to a local endpoint three times and prints what arrived:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>── provider='openai'  →  POST /v1/chat/completions
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>headers : {'authorization': '***'}
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>keys    : ['max_completion_tokens', 'messages', 'model', 'tools']
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>messages: [{"role": "system", "content": "You are a weather bot."}, {"role": "user", "content": "Weather in Paris?"}, {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}}]}, {"role": "tool", "tool_call_id": "call_1", "content": "18°C and sunny"}]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>── provider=&#39;openai&#39;  →  POST /v1/chat/completions
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>headers : {&#39;authorization&#39;: &#39;***&#39;}
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>keys    : [&#39;max_completion_tokens&#39;, &#39;messages&#39;, &#39;model&#39;, &#39;tools&#39;]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>messages: [{&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a weather bot.&quot;}, {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Weather in Paris?&quot;}, {&quot;role&quot;: &quot;assistant&quot;, &quot;tool_calls&quot;: [{&quot;id&quot;: &quot;call_1&quot;, &quot;type&quot;: &quot;function&quot;, &quot;function&quot;: {&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: &quot;{\&quot;city\&quot;: \&quot;Paris\&quot;}&quot;}}]}, {&quot;role&quot;: &quot;tool&quot;, &quot;tool_call_id&quot;: &quot;call_1&quot;, &quot;content&quot;: &quot;18°C and sunny&quot;}]
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>── provider='custom'  →  POST /v1/chat/completions
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>keys    : ['max_tokens', 'messages', 'model', 'tools']
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>── provider=&#39;custom&#39;  →  POST /v1/chat/completions
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>keys    : [&#39;max_tokens&#39;, &#39;messages&#39;, &#39;model&#39;, &#39;tools&#39;]
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>── provider='anthropic'  →  POST /v1/messages
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>headers : {'x-api-key': '***', 'anthropic-version': '2023-06-01'}
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>keys    : ['max_tokens', 'messages', 'model', 'system', 'tools']
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>messages: [{"role": "user", "content": "Weather in Paris?"}, {"role": "assistant", "content": [{"type": "tool_use", "id": "call_1", "name": "get_weather", "input": {"city": "Paris"}}]}, {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1", "content": "18°C and sunny"}]}]
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>system  : 'You are a weather bot.'
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>tools   : [{"name": "get_weather", "description": "Current weather for a city.", "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}]
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>── provider=&#39;anthropic&#39;  →  POST /v1/messages
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>headers : {&#39;x-api-key&#39;: &#39;***&#39;, &#39;anthropic-version&#39;: &#39;2023-06-01&#39;}
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>keys    : [&#39;max_tokens&#39;, &#39;messages&#39;, &#39;model&#39;, &#39;system&#39;, &#39;tools&#39;]
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>messages: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Weather in Paris?&quot;}, {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;call_1&quot;, &quot;name&quot;: &quot;get_weather&quot;, &quot;input&quot;: {&quot;city&quot;: &quot;Paris&quot;}}]}, {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: &quot;call_1&quot;, &quot;content&quot;: &quot;18°C and sunny&quot;}]}]
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>system  : &#39;You are a weather bot.&#39;
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>tools   : [{&quot;name&quot;: &quot;get_weather&quot;, &quot;description&quot;: &quot;Current weather for a city.&quot;, &quot;input_schema&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;city&quot;: {&quot;type&quot;: &quot;string&quot;}}, &quot;required&quot;: [&quot;city&quot;]}}]
 </code></pre></div>
 <p>Same four <code>Message</code> objects, same tool dict. The tool-call arguments went out as a JSON string on one wire and as an object on the other; the system prompt was a message on one and a field on the other. None of that reached the code that built the four messages.</p>
 <p><strong>Code:</strong> <code>_build_openai_body</code> and <code>_build_anthropic_body</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py"><code>llm/client.py</code></a>; <code>to_provider_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/message.py"><code>llm/message.py</code></a>; the Gemini wire is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/providers/gemini.py"><code>llm/providers/gemini.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_1_wire.py"><code>proof_1_wire.py</code></a>, with the recording endpoint in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/_recorder.py"><code>_recorder.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_provider_dispatch.py"><code>tests/test_provider_dispatch.py</code></a> pins the body rewrites.</p>
@@ -6462,17 +6462,17 @@
 <p>Proof 2 asks four providers on three wires the same two things:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>── a plain reply
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>provider   finish   content    usage keys (normalized)                      latency
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>openai     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +2 provider-specific 827 ms
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>anthropic  stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 984 ms
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>gemini     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 1721 ms
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>groq       stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +5 provider-specific 551 ms
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>openai     stop     PONG       [&#39;prompt_tokens&#39;, &#39;completion_tokens&#39;, &#39;total_tokens&#39;] +2 provider-specific 827 ms
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>anthropic  stop     PONG       [&#39;prompt_tokens&#39;, &#39;completion_tokens&#39;, &#39;total_tokens&#39;] 984 ms
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>gemini     stop     PONG       [&#39;prompt_tokens&#39;, &#39;completion_tokens&#39;, &#39;total_tokens&#39;] 1721 ms
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>groq       stop     PONG       [&#39;prompt_tokens&#39;, &#39;completion_tokens&#39;, &#39;total_tokens&#39;] +5 provider-specific 551 ms
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>── a tool call
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>provider   finish      tool         arguments            type   content
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>openai     tool_calls  get_weather  {'city': 'Paris'}    dict   None
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>anthropic  tool_calls  get_weather  {'city': 'Paris'}    dict   None
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>gemini     tool_calls  get_weather  {'city': 'Paris'}    dict   None
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>groq       tool_calls  get_weather  {'city': 'Paris'}    dict   None
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>openai     tool_calls  get_weather  {&#39;city&#39;: &#39;Paris&#39;}    dict   None
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>anthropic  tool_calls  get_weather  {&#39;city&#39;: &#39;Paris&#39;}    dict   None
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>gemini     tool_calls  get_weather  {&#39;city&#39;: &#39;Paris&#39;}    dict   None
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>groq       tool_calls  get_weather  {&#39;city&#39;: &#39;Paris&#39;}    dict   None
 </code></pre></div>
 <p>One lesson from writing this proof is the last rule. Its first version set <code>temperature=0</code> on every client, and the Anthropic call failed with <code>400 "temperature is deprecated for this model"</code>, from <code>claude-sonnet-5-5</code>. The SDK passed the parameter through, as it should; the provider refused it. A parameter that is fine on one provider can be a hard error on another, and a swap of <code>provider=</code> is a change to test, not a change to assume.</p>
 <p><strong>Code:</strong> <code>_parse_openai_response</code> and the Anthropic parse in <code>_call_anthropic</code>, in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py"><code>llm/client.py</code></a>; the Gemini parse is in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/providers/gemini.py"><code>llm/providers/gemini.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_2_parse.py"><code>proof_2_parse.py</code></a> (needs the four keys; a missing one skips that provider); the providers are listed in <a href="../providers/">Providers</a>.</p>
@@ -6491,7 +6491,7 @@
 </ul>
 <p>Proof 3 lists what ships and then registers a gateway preset pointed at the recording endpoint:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>── what ships
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>built-ins (code paths): ['anthropic', 'azure', 'bedrock', 'custom', 'ollama', 'openai', 'test']
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>built-ins (code paths): [&#39;anthropic&#39;, &#39;azure&#39;, &#39;bedrock&#39;, &#39;custom&#39;, &#39;ollama&#39;, &#39;openai&#39;, &#39;test&#39;]
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>preset       wire           response_format  parallel_tool_calls  env var
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>cerebras     openai_compat  False            False                CEREBRAS_API_KEY
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>deepseek     openai_compat  native           False                DEEPSEEK_API_KEY
@@ -6504,10 +6504,10 @@
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>provider keys in total: 19
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>── a gateway preset in five lines, and what its flags do to the body
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>POST /v1/chat/completions · headers {'authorization': '***'} (key read from CORP_GATEWAY_KEY)
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>body keys: ['max_tokens', 'messages', 'model', 'tools']
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>POST /v1/chat/completions · headers {&#39;authorization&#39;: &#39;***&#39;} (key read from CORP_GATEWAY_KEY)
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>body keys: [&#39;max_tokens&#39;, &#39;messages&#39;, &#39;model&#39;, &#39;tools&#39;]
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>system message sent:
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>"Answer briefly.\n\nCall the tools you need first. When you give your final answer, you must respond with valid JSON matching this schema ('City'):\n```json\n{\n  \"properties\": {\n    \"name\": {\n      \"title\": \"Name\",\n      \"type\": \"string\"\n    }, …
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>&quot;Answer briefly.\n\nCall the tools you need first. When you give your final answer, you must respond with valid JSON matching this schema (&#39;City&#39;):\n```json\n{\n  \&quot;properties\&quot;: {\n    \&quot;name\&quot;: {\n      \&quot;title\&quot;: \&quot;Name\&quot;,\n      \&quot;type\&quot;: \&quot;string\&quot;\n    }, …
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>response_format in body: False · parallel_tool_calls in body: False · max_tokens key: max_tokens
 <a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>the canned reply parsed as City: None
 </code></pre></div>
@@ -6530,21 +6530,21 @@
 </ul>
 <p>Proof 4 streams the same prompt it completes, on <code>gpt-4.1-mini</code>, and then streams a two-turn tool loop through an agent on the SDK's <code>FunctionModel</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>── complete() and stream() return the same shape
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>complete() content='1, 2, 3, 4, 5' finish='stop' usage={'prompt_tokens': 22, 'completion_tokens': 13, 'total_tokens': 35, …}
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>stream()   content='1, 2, 3, 4, 5' finish='stop' usage={'prompt_tokens': 22, 'completion_tokens': 13, 'total_tokens': 35}
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>complete() content=&#39;1, 2, 3, 4, 5&#39; finish=&#39;stop&#39; usage={&#39;prompt_tokens&#39;: 22, &#39;completion_tokens&#39;: 13, &#39;total_tokens&#39;: 35, …}
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>stream()   content=&#39;1, 2, 3, 4, 5&#39; finish=&#39;stop&#39; usage={&#39;prompt_tokens&#39;: 22, &#39;completion_tokens&#39;: 13, &#39;total_tokens&#39;: 35}
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>── astream() is the same call as typed events
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>event sequence: {'TextDelta': 13, 'Usage': 1, 'StreamDone': 1}
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>text joined   : '1, 2, 3, 4, 5'
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>event sequence: {&#39;TextDelta&#39;: 13, &#39;Usage&#39;: 1, &#39;StreamDone&#39;: 1}
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>text joined   : &#39;1, 2, 3, 4, 5&#39;
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>last event    : StreamDone · usage event: Usage(prompt_tokens=22, completion_tokens=13)
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>with a tool   : [('ToolCallStart', 'get_weather', None), ('ToolCallEnd', 'get_weather', {'city': 'Paris'})]
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>with a tool   : [(&#39;ToolCallStart&#39;, &#39;get_weather&#39;, None), (&#39;ToolCallEnd&#39;, &#39;get_weather&#39;, {&#39;city&#39;: &#39;Paris&#39;})]
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>── both paths leave the same llm span
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>{'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13, 'gen_ai.response.finish_reason': 'stop'}
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>{'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13, 'gen_ai.response.finish_reason': 'stop'}
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>{&#39;gen_ai.request.model&#39;: &#39;gpt-4.1-mini&#39;, &#39;gen_ai.usage.input_tokens&#39;: 22, &#39;gen_ai.usage.output_tokens&#39;: 13, &#39;gen_ai.response.finish_reason&#39;: &#39;stop&#39;}
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>{&#39;gen_ai.request.model&#39;: &#39;gpt-4.1-mini&#39;, &#39;gen_ai.usage.input_tokens&#39;: 22, &#39;gen_ai.usage.output_tokens&#39;: 13, &#39;gen_ai.response.finish_reason&#39;: &#39;stop&#39;}
 <a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
 <a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>── inside an agent, a tool loop is one stream (offline, FunctionModel)
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>model turns: 2 · events in order: ['ToolCallStart', 'ToolCallEnd', 'Usage', 'TextDelta', 'Usage', 'StreamDone']
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>model turns: 2 · events in order: [&#39;ToolCallStart&#39;, &#39;ToolCallEnd&#39;, &#39;Usage&#39;, &#39;TextDelta&#39;, &#39;Usage&#39;, &#39;StreamDone&#39;]
 <a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>StreamDone events in the agent stream: 1 · last event: StreamDone
 </code></pre></div>
 <p>Thirteen deltas joined to the same five numbers <code>complete()</code> returned, with the same usage. The streamed span carries the same tokens and the same <code>finish_reason</code>. And the agent's stream, two model turns long, carried no marker between the turns and exactly one at the end.</p>
@@ -6567,15 +6567,15 @@
 </ul>
 <p>Proof 5 asks two providers for a <code>City</code> and then makes an offline model fail once:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>── output_type on the client: two providers, one parsed object
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>openai     content='{"name":"Paris","country":"France"}'
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>           parsed =City(name='Paris', country='France') (City)
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>anthropic  content='{"name": "Paris", "country": "France"}'
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>           parsed =City(name='Paris', country='France') (City)
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>openai     content=&#39;{&quot;name&quot;:&quot;Paris&quot;,&quot;country&quot;:&quot;France&quot;}&#39;
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>           parsed =City(name=&#39;Paris&#39;, country=&#39;France&#39;) (City)
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>anthropic  content=&#39;{&quot;name&quot;: &quot;Paris&quot;, &quot;country&quot;: &quot;France&quot;}&#39;
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>           parsed =City(name=&#39;Paris&#39;, country=&#39;France&#39;) (City)
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>── the agent re-asks when a reply does not parse (offline)
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>model calls   : 2
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>second call's last message: 'Your previous response could not be used: the response was not valid JSON (Expecting value: line 1 column 1 (char 0)). Reply again with ONLY the JSON ' …
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>result.parsed : name='Paris' country='France' · output: {"name": "Paris", "country": "France"}
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>second call&#39;s last message: &#39;Your previous response could not be used: the response was not valid JSON (Expecting value: line 1 column 1 (char 0)). Reply again with ONLY the JSON &#39; …
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>result.parsed : name=&#39;Paris&#39; country=&#39;France&#39; · output: {&quot;name&quot;: &quot;Paris&quot;, &quot;country&quot;: &quot;France&quot;}
 </code></pre></div>
 <p>OpenAI enforced the schema on the wire; Anthropic was told the schema in its system prompt. Both came back as the same <code>City</code>. The offline model answered in prose first, was told exactly why that could not be used, and answered in JSON.</p>
 <p><strong>Code:</strong> <code>OutputSpec</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/structured.py"><code>llm/structured.py</code></a>; <code>acomplete(output_type=)</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py"><code>llm/client.py</code></a>; <code>_reask_structured</code> and <code>output_retries</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py"><code>agent/agent.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_5_structured.py"><code>proof_5_structured.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_structured_output.py"><code>tests/test_structured_output.py</code></a> pins the layers; see <a href="../../structured-output/">Structured Output</a> and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/13_structured_output.py"><code>examples/13_structured_output.py</code></a>.</p>
@@ -6602,16 +6602,16 @@
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>ollama / lmstudio / vllm is_local_free → True, a known zero, not an unknown
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>── retries: off by default; 429, 5xx and transport failures, with backoff
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>max_retries=2 : 3 requests, content='recorded', latency_ms=3046 (two backoffs: 1 s + 2 s), wall 3.1 s
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>max_retries=0 : LLMProviderError status=429: OpenAI API error 429: {"error": {"message": "canned 429", "t…
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>max_retries=2 : 3 requests, content=&#39;recorded&#39;, latency_ms=3046 (two backoffs: 1 s + 2 s), wall 3.1 s
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>max_retries=0 : LLMProviderError status=429: OpenAI API error 429: {&quot;error&quot;: {&quot;message&quot;: &quot;canned 429&quot;, &quot;t…
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>── two serializers: the span summary never carries the image
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>to_openai_format()  (spans, logs): {"role": "user", "content": [{"type": "text", "text": "What is this?"}, {"type": "image", "media_type": "image/png", "size_bytes": 68, "source_url": null}]}
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>to_openai_format()  (spans, logs): {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;What is this?&quot;}, {&quot;type&quot;: &quot;image&quot;, &quot;media_type&quot;: &quot;image/png&quot;, &quot;size_bytes&quot;: 68, &quot;source_url&quot;: null}]}
 <a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>to_provider_dict()  (the wire)   : image_url = data:image/png;base64,… (114 chars)
 <a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
 <a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>── the llm span, and what leaves the machine with FASTAIAGENT_TRACE_PAYLOADS=0
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>captured locally: ['gen_ai.request.messages', 'gen_ai.request.model', 'gen_ai.response.content', 'gen_ai.response.finish_reason', 'gen_ai.system', 'gen_ai.usage.input_tokens', 'gen_ai.usage.output_tokens']
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>dropped on export: ['gen_ai.request.messages', 'gen_ai.response.content']
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>captured locally: [&#39;gen_ai.request.messages&#39;, &#39;gen_ai.request.model&#39;, &#39;gen_ai.response.content&#39;, &#39;gen_ai.response.finish_reason&#39;, &#39;gen_ai.system&#39;, &#39;gen_ai.usage.input_tokens&#39;, &#39;gen_ai.usage.output_tokens&#39;]
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>dropped on export: [&#39;gen_ai.request.messages&#39;, &#39;gen_ai.response.content&#39;]
 </code></pre></div>
 <p>The endpoint answered <code>429</code>, then <code>503</code>, then <code>200</code>; with two retries the call succeeded and its latency carries the three seconds of backoff. With none it raised, with the status on the error. The one-pixel image went to the span as 68 bytes of description and to the wire as a 114-character data URL.</p>
 <p><strong>Code:</strong> <code>_acomplete_with_retries</code>, <code>_should_retry</code>, <code>_retry_delay</code> and <code>_new_async_client</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py"><code>llm/client.py</code></a>; <code>compute_cost_usd</code>, <code>_match</code> and <code>LOCAL_FREE_PROVIDERS</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/_internal/pricing.py"><code>_internal/pricing.py</code></a>; <code>to_openai_format</code> and <code>_summarize_parts</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/message.py"><code>llm/message.py</code></a>; <code>apply_export_policy</code> and <code>SENSITIVE_ATTR_KEYS</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/redaction.py"><code>trace/redaction.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_6_numbers.py"><code>proof_6_numbers.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_retry.py"><code>tests/test_retry.py</code></a> and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_agent_cost.py"><code>tests/test_agent_cost.py</code></a> pin the policies; see <a href="../../ui/cost-tracking/">Cost tracking</a> and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/22_llm_parameters.py"><code>examples/22_llm_parameters.py</code></a>.</p>
@@ -6716,10 +6716,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

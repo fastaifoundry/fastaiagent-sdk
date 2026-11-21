@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6428,16 +6428,16 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">forked</span> <span class="o">=</span> <span class="p">(</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">replay</span><span class="o">.</span><span class="n">fork_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">"recorded"</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">"error"</span><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">"block"</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">"lookup_order"</span><span class="p">])</span>   <span class="c1"># only this tool really runs</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="o">.</span><span class="n">with_determinism</span><span class="p">(</span><span class="s2">&quot;recorded&quot;</span><span class="p">,</span> <span class="n">on_miss</span><span class="o">=</span><span class="s2">&quot;error&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">])</span>   <span class="c1"># only this tool really runs</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">rerun</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="k">assert</span> <span class="n">rerun</span><span class="o">.</span><span class="n">new_output</span> <span class="o">==</span> <span class="n">rerun</span><span class="o">.</span><span class="n">original_output</span>     <span class="c1"># no model call was made</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">fixed</span> <span class="o">=</span> <span class="p">(</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">replay</span><span class="o">.</span><span class="n">fork_at</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="o">.</span><span class="n">modify_prompt</span><span class="p">(</span><span class="s2">"Use the tool to answer. Answer in French, one sentence."</span><span class="p">)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">"block"</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">"lookup_order"</span><span class="p">])</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="o">.</span><span class="n">modify_prompt</span><span class="p">(</span><span class="s2">&quot;Use the tool to answer. Answer in French, one sentence.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="o">.</span><span class="n">with_tool_policy</span><span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="n">allow</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">])</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">)</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="n">rerun</span> <span class="o">=</span> <span class="n">fixed</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>                                <span class="c1"># live: a real call, a new answer</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="nb">print</span><span class="p">(</span><span class="n">fixed</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">rerun</span><span class="p">)</span><span class="o">.</span><span class="n">diverged_at</span><span class="p">)</span>
@@ -6461,10 +6461,10 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>the root span carries:
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  agent.name           shipping
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  agent.system_prompt  You answer shipping questions.
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  agent.llm.config     {"provider": "test", "model": "function-model"}
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  agent.tools          [{"name": "lookup_order", "description": "Look an order up in the shipping system.", …
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  agent.guardrails     [{"name": "no_secrets", "guardrail_type": "code", "position": "output", "config": {},…
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  agent.config         {"max_iterations": 3, "tool_choice": "auto", "temperature": null, "max_tokens": null,…
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  agent.llm.config     {&quot;provider&quot;: &quot;test&quot;, &quot;model&quot;: &quot;function-model&quot;}
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  agent.tools          [{&quot;name&quot;: &quot;lookup_order&quot;, &quot;description&quot;: &quot;Look an order up in the shipping system.&quot;, …
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  agent.guardrails     [{&quot;name&quot;: &quot;no_secrets&quot;, &quot;guardrail_type&quot;: &quot;code&quot;, &quot;position&quot;: &quot;output&quot;, &quot;config&quot;: {},…
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  agent.config         {&quot;max_iterations&quot;: 3, &quot;tool_choice&quot;: &quot;auto&quot;, &quot;temperature&quot;: null, &quot;max_tokens&quot;: null,…
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  api_key in agent.llm.config: False
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>Steps:
@@ -6478,11 +6478,11 @@
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>  [7] memory.write
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
 <a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>the rebuilt agent:
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>  llm         LLMClient(provider='test', model='function-model')
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>  tools       ['lookup_order']   the live function: True   replay_class=read_only
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>  guardrails  ['no_secrets']
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>  llm         LLMClient(provider=&#39;test&#39;, model=&#39;function-model&#39;)
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>  tools       [&#39;lookup_order&#39;]   the live function: True   replay_class=read_only
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>  guardrails  [&#39;no_secrets&#39;]
 <a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>  config      max_iterations=3
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>  memory      None   (the original's window holds 2 messages)
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>  memory      None   (the original&#39;s window holds 2 messages)
 </code></pre></div>
 <p>The tool came back as the very function that was defined, the guardrail came back, the config came back, and the rebuilt agent has no memory while the original's window holds the conversation.</p>
 <p><strong>Code:</strong> <code>_build_agent_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/replay.py"><code>trace/replay.py</code></a>; <code>Agent.from_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py"><code>agent/agent.py</code></a>; <code>LLMClient.from_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py"><code>llm/client.py</code></a>; <code>FunctionTool._from_dict</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/tool/function.py"><code>tool/function.py</code></a>. <code>Replay.from_platform</code> maps a plane trace into the same shape. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_blueprint.py"><code>proofs/proof_blueprint.py</code></a>; the attribute list is in <a href="../../tracing/#agent-reconstruction-attributes-used-by-replay">Agent Reconstruction Attributes</a>.</p>
@@ -6502,9 +6502,9 @@
 <li><strong>It needs the captured responses.</strong> A trace with none, such as one pulled from the plane with payloads stripped, raises <code>ReplayError</code>.</li>
 </ul>
 <p>Proof 2 is the live run, replayed with its read-only lookup allowed:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>recorded : 'Order 1042 was shipped on 12 September via DHL with the tracking number 7788-2201.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>recorded : &#39;Order 1042 was shipped on 12 September via DHL with the tracking number 7788-2201.&#39;
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>identical: True   tool calls so far: 2
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>tools    : {'lookup_order': 'live'}   exported=False
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>tools    : {&#39;lookup_order&#39;: &#39;live&#39;}   exported=False
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    agent.shipping               tokens_used=0 latency_ms=1
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        llm.openai.gpt-4.1-mini      tokens=None+None finish=tool_calls replay.mode=recorded
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        tool.lookup_order            runner.type=tool replay_class=read_only status=ok
@@ -6513,8 +6513,8 @@
 </code></pre></div>
 <p>Byte-identical, no tokens billed, the allowed tool called a second time, and both model spans marked recorded. The offline proof adds the prompt change:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>modify_prompt under recorded mode:
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  prompt the rerun was given: 'Répondez en français.'
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  answer: 'Order 1042 was shipped via DHL on 12 September.'
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  prompt the rerun was given: &#39;Répondez en français.&#39;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  answer: &#39;Order 1042 was shipped via DHL on 12 September.&#39;
 </code></pre></div>
 <p><img alt="The recorded rerun in the Local UI: 2ms, no tokens, no cost" src="../img/replay-boundaries/ui-02-recorded-rerun.png" />
 <em>The recorded rerun in the Local UI: four spans in 2 ms, no tokens, no cost.</em></p>
@@ -6537,21 +6537,21 @@
 <li><strong><code>replay_class</code> is recorded on every tool span</strong> as <code>fastaiagent.tool.replay_class</code>: <code>read_only</code>, <code>idempotent</code> or <code>side_effecting</code>. The default is <code>side_effecting</code>, and it is never inferred; a GET <code>RESTTool</code> is side-effecting until you say otherwise. The central Replay engine reads it to choose between injecting the recorded output and re-executing. The SDK's rerun does not: it blocks whatever you did not allow, whatever its class.</li>
 </ul>
 <p>Proof 3 charges a card:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>replay_class: charge_card='side_effecting'  GET carrier_status='side_effecting'
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>tool span: fastaiagent.tool.replay_class='side_effecting'
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>original run: 'Done: charged 42.00.'   charges=[42.0]
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>default rerun: 'Done: charged 42.00.'   charges=[42.0]
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  tool_dispositions={'charge_card': 'blocked', 'carrier_status': 'blocked'}
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  blocked_tool_calls={'charge_card': 1}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>replay_class: charge_card=&#39;side_effecting&#39;  GET carrier_status=&#39;side_effecting&#39;
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>tool span: fastaiagent.tool.replay_class=&#39;side_effecting&#39;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>original run: &#39;Done: charged 42.00.&#39;   charges=[42.0]
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>default rerun: &#39;Done: charged 42.00.&#39;   charges=[42.0]
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  tool_dispositions={&#39;charge_card&#39;: &#39;blocked&#39;, &#39;carrier_status&#39;: &#39;blocked&#39;}
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  blocked_tool_calls={&#39;charge_card&#39;: 1}
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  tool.status = error
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>live, same process: 'Done: charged 42.00.'   charges=[42.0, 42.0]
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  tool_dispositions={'charge_card': 'live', 'carrier_status': 'blocked'}
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>live, same process: &#39;Done: charged 42.00.&#39;   charges=[42.0, 42.0]
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  tool_dispositions={&#39;charge_card&#39;: &#39;live&#39;, &#39;carrier_status&#39;: &#39;blocked&#39;}
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>live, fresh process:
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  output: 'Done: charged 42.00.'
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  output: &#39;Done: charged 42.00.&#39;
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  disposition: no_function
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>  tool.status = error | tool.error = 'No function attached to this tool'
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>with_tool_override: 'Done: charged 42.00.'   charges=[42.0, 42.0]
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>  tool_dispositions={'charge_card': 'override', 'carrier_status': 'blocked'}
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>  tool.status = error | tool.error = &#39;No function attached to this tool&#39;
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>with_tool_override: &#39;Done: charged 42.00.&#39;   charges=[42.0, 42.0]
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>  tool_dispositions={&#39;charge_card&#39;: &#39;override&#39;, &#39;carrier_status&#39;: &#39;blocked&#39;}
 </code></pre></div>
 <p>The default rerun charged nothing and said so: one blocked call. Allowing the tool charged the card a second time, in the process that defined it; in a fresh process there was nothing to run. The override charged nothing. Every one of them produced the recorded answer. <strong>A recorded rerun that passes is not evidence that the tools behaved.</strong> Read <code>blocked_tool_calls</code>, or <code>compare().tool_diffs</code>.</p>
 <p><strong>Code:</strong> <code>_build_tool_plan</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/replay.py"><code>trace/replay.py</code></a>; the blocked stand-in in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/tool/_replay_blocked.py"><code>tool/_replay_blocked.py</code></a>; <code>replay_class</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/tool/base.py"><code>tool/base.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_tools.py"><code>proofs/proof_tools.py</code></a>; <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/70_tool_replay_class.py"><code>examples/70_tool_replay_class.py</code></a> runs the class rules as pytest, and <a href="../../tools/#replay-safety-replay_class">Tools → Replay safety</a> is the reference.</p>
@@ -6571,17 +6571,17 @@
 </ul>
 <p>Proof 4's original run died on its second model call, so its recording holds one response and a rerun needs two:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>captured model responses: 1
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>on_miss='error' → ReplayError: determinism='recorded' ran out of captured LLM responses: the rerun makes more LLM calls than the original trace. Use with_determinism('recorded', on_miss='live') to allow falling through to live provider calls.
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  warning: determinism='recorded' ran out of captured LLM responses; falling through to a LIVE test call (billed, nondeterministic). Pass with_determinism('recorded', on_miss='error') to fail instead.
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>on_miss='live' (default) → the live call to provider 'test' failed: LLMError
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>on_miss=&#39;error&#39; → ReplayError: determinism=&#39;recorded&#39; ran out of captured LLM responses: the rerun makes more LLM calls than the original trace. Use with_determinism(&#39;recorded&#39;, on_miss=&#39;live&#39;) to allow falling through to live provider calls.
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  warning: determinism=&#39;recorded&#39; ran out of captured LLM responses; falling through to a LIVE test call (billed, nondeterministic). Pass with_determinism(&#39;recorded&#39;, on_miss=&#39;error&#39;) to fail instead.
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>on_miss=&#39;live&#39; (default) → the live call to provider &#39;test&#39; failed: LLMError
 </code></pre></div>
 <p>And the divergence, from the live run rerun with a French prompt:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>live, new prompt: 'La commande 1042 a été expédiée le 12 septembre via DHL, avec le numéro de suivi 7788-2201.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>live, new prompt: &#39;La commande 1042 a été expédiée le 12 septembre via DHL, avec le numéro de suivi 7788-2201.&#39;
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>compare(): status=ok diverged_at=0 (agent.shipping)
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  step 0 agent.shipping             'Order 1042 was shipped on 12 September v'   | agent.shipping             'La commande 1042 a été expédiée le 12 se'
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  step 1 llm.openai.gpt-4.1-mini    ''                                           | llm.openai.gpt-4.1-mini    ''
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  step 2 tool.lookup_order          ''                                           | tool.lookup_order          ''
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  step 3 llm.openai.gpt-4.1-mini    'Order 1042 was shipped on 12 September v'   | llm.openai.gpt-4.1-mini    'La commande 1042 a été expédiée le 12 se'
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  step 0 agent.shipping             &#39;Order 1042 was shipped on 12 September v&#39;   | agent.shipping             &#39;La commande 1042 a été expédiée le 12 se&#39;
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  step 1 llm.openai.gpt-4.1-mini    &#39;&#39;                                           | llm.openai.gpt-4.1-mini    &#39;&#39;
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  step 2 tool.lookup_order          &#39;&#39;                                           | tool.lookup_order          &#39;&#39;
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  step 3 llm.openai.gpt-4.1-mini    &#39;Order 1042 was shipped on 12 September v&#39;   | llm.openai.gpt-4.1-mini    &#39;La commande 1042 a été expédiée le 12 se&#39;
 </code></pre></div>
 <p>(The rerun allowed <code>lookup_order</code>, so the French answer was written from a real lookup.)</p>
 <p>The path was the same, tool call and all, and the words changed; the first differing step is the root, because the root holds the answer.</p>
@@ -6602,9 +6602,9 @@
 <li><strong>Otherwise a normal run, marked as a rerun.</strong> It is traced with its own trace id, and the trace says it is a replay (section 7).</li>
 </ul>
 <p>Proof 5 gives the original agent a memory window and a guardrail, then reruns it, then overrides its tool with one that asks for approval:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>original run: prompt roles ['system', 'user', 'assistant', 'user']   memory holds 4 messages
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>rerun:        prompt roles ['system', 'user']   memory holds 4 messages
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>rerun spans:  ['agent.refunds', 'llm.test.function-model', 'tool.refund', 'llm.test.function-model', 'guardrail.no_secrets']
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>original run: prompt roles [&#39;system&#39;, &#39;user&#39;, &#39;assistant&#39;, &#39;user&#39;]   memory holds 4 messages
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>rerun:        prompt roles [&#39;system&#39;, &#39;user&#39;]   memory holds 4 messages
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>rerun spans:  [&#39;agent.refunds&#39;, &#39;llm.test.function-model&#39;, &#39;tool.refund&#39;, &#39;llm.test.function-model&#39;, &#39;guardrail.no_secrets&#39;]
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>a tool that pauses → ReplayError: Replay of trace 118ea9588401c3afb16f65dde92f3090 paused: refund needs a human. A replay rebuilds the agent without a checkpointer, so it cannot hold a pause. Override the tool that paused with with_tool_override(name, tool) to replay past it.
 </code></pre></div>
 <p>The original's second turn saw the conversation; the rerun saw only the system prompt and the question, and left the memory as it was. The guardrail ran. The pause was refused with its reason.</p>
@@ -6623,19 +6623,19 @@
 </ul>
 <p>Proof 6 saves a recorded rerun and evaluates the agent against it, then evaluates an agent with the old prompt:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>the saved case:
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  input            'What is your refund policy?'
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  expected_output  'Refunds are issued within 14 days.'
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  trace_id         '8b05b26f25a17448566dbaed0abeef44'
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  source_trace_id  '09efdb5c25de85d392aad2293d77cb6e'
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  fixed_trace_id   '8b05b26f25a17448566dbaed0abeef44'
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  input            &#39;What is your refund policy?&#39;
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  expected_output  &#39;Refunds are issued within 14 days.&#39;
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  trace_id         &#39;8b05b26f25a17448566dbaed0abeef44&#39;
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  source_trace_id  &#39;09efdb5c25de85d392aad2293d77cb6e&#39;
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  fixed_trace_id   &#39;8b05b26f25a17448566dbaed0abeef44&#39;
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>  fork_step        0
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>  modifications    {'prompt': 'You are a support agent. Refunds are issued within 14 days.'}
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>  created_at       '2026-10-10T19:51:37.505832+00:00'
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>  modifications    {&#39;prompt&#39;: &#39;You are a support agent. Refunds are issued within 14 days.&#39;}
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>  created_at       &#39;2026-10-10T19:51:37.505832+00:00&#39;
 <a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>evaluate() on the saved case: exact_match passed=True score=1.0
 <a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>evaluate() with the old prompt:  exact_match passed=False score=0.0
 </code></pre></div>
 <p>The live run saved the same way, pointing back at its own trace:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>saved: {'input': 'Where is order 1042?', 'expected_output': 'Order 1042 was shipped on 12 September via DHL with the tracking number 7788-2201.', 'trace_id': '3fc2738e…', 'source_trace_id': 'c3934819…', 'fixed_trace_id': '3fc2738e…', 'fork_step': 0, 'modifications': {}, …}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>saved: {&#39;input&#39;: &#39;Where is order 1042?&#39;, &#39;expected_output&#39;: &#39;Order 1042 was shipped on 12 September via DHL with the tracking number 7788-2201.&#39;, &#39;trace_id&#39;: &#39;3fc2738e…&#39;, &#39;source_trace_id&#39;: &#39;c3934819…&#39;, &#39;fixed_trace_id&#39;: &#39;3fc2738e…&#39;, &#39;fork_step&#39;: 0, &#39;modifications&#39;: {}, …}
 </code></pre></div>
 <p><strong>Code:</strong> <code>ReplayResult.save_as_test</code> in <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/replay.py"><code>trace/replay.py</code></a>. The proof is <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_regression.py"><code>proofs/proof_regression.py</code></a>; the whole loop against a real model, with a broken tool to fix, is the <a href="../../flagships/regression-from-trace/">Regression from Trace</a> template, and <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py"><code>examples/62_replay_to_regression.py</code></a> is the single-file version.</p>
 <hr />
@@ -6652,10 +6652,10 @@
 <li><strong>A store of its own, if you like.</strong> <code>with_trace_db(path)</code> writes the rerun elsewhere; <code>compare()</code> finds it there.</li>
 </ul>
 <p>Proof 7 reruns a run and reads back what was written:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>rerun root: fastaiagent.source='replay'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>rerun root: fastaiagent.source=&#39;replay&#39;
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  replays: True
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  determinism='recorded'
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>  tool_policy='block'
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  determinism=&#39;recorded&#39;
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>  tool_policy=&#39;block&#39;
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>rerun.exported=False
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>original rows synced=[2]
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>rerun    rows synced=[2]
@@ -6768,10 +6768,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

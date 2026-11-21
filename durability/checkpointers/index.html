@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6621,16 +6621,16 @@ MVCC makes it formally bulletproof.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chain</span><span class="p">,</span> <span class="n">SQLiteCheckpointer</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">"my-flow"</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;my-flow&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">checkpointer</span><span class="o">=</span><span class="n">SQLiteCheckpointer</span><span class="p">(),</span>  <span class="c1"># writes to ./.fastaiagent/local.db</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 </code></pre></div>
 <p>Custom path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="n">db_path</span><span class="o">=</span><span class="s2">"/var/lib/fastaiagent/state.db"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;/var/lib/fastaiagent/state.db&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Or set the <code>FASTAIAGENT_LOCAL_DB</code> environment variable.</p>
 <p>In memory, for tests:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="s2">":memory:"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">SQLiteCheckpointer</span><span class="p">(</span><span class="s2">&quot;:memory:&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Each in-memory checkpointer is its own private database, shared by every thread
 that uses it (the plane replica drains on a background thread) and gone when
@@ -6657,16 +6657,16 @@ are on different machines — SQLite is filesystem-bound. For that, use
 Postgres.</p>
 <h2 id="postgres">Postgres<a class="headerlink" href="#postgres" title="Permanent link">&para;</a></h2>
 <p>Ships under the <code>[postgres]</code> extra:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'fastaiagent[postgres]'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;fastaiagent[postgres]&#39;</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chain</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.checkpointers.postgres</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostgresCheckpointer</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">"my-flow"</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">&quot;my-flow&quot;</span><span class="p">,</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">checkpointer</span><span class="o">=</span><span class="n">PostgresCheckpointer</span><span class="p">(</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="s2">"postgresql://user:pass@host:5432/fastaiagent"</span><span class="p">,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="n">schema</span><span class="o">=</span><span class="s2">"fastaiagent"</span><span class="p">,</span>  <span class="c1"># default; pass a custom name to share one DB</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="s2">&quot;postgresql://user:pass@host:5432/fastaiagent&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;fastaiagent&quot;</span><span class="p">,</span>  <span class="c1"># default; pass a custom name to share one DB</span>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        <span class="n">min_pool_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>        <span class="n">max_pool_size</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="p">),</span>
@@ -6678,7 +6678,7 @@ Postgres.</p>
 applies the DDL inside <code>IF NOT EXISTS</code> guards, and writes a row to
 <code>schema_version</code>. Re-runs are no-ops. Recommended deploy step:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>fastaiagent<span class="w"> </span>setup-checkpointer<span class="w"> </span>--backend<span class="w"> </span>postgres<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">"</span><span class="nv">$DATABASE_URL</span><span class="s2">"</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--connection-string<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DATABASE_URL</span><span class="s2">&quot;</span>
 </code></pre></div>
 <h3 id="re-using-a-checkpoint_id-raises">Re-using a <code>checkpoint_id</code> raises<a class="headerlink" href="#re-using-a-checkpoint_id-raises" title="Permanent link">&para;</a></h3>
 <p><code>put()</code> is a plain <code>INSERT</code>. Writing a checkpoint whose id already exists raises
@@ -6735,8 +6735,8 @@ RDS Proxy) and keep the SDK pool small.</p>
 <h2 id="schema-sharing">Schema sharing<a class="headerlink" href="#schema-sharing" title="Permanent link">&para;</a></h2>
 <p>The default Postgres schema name is <code>fastaiagent</code>. Override per
 checkpointer to run multiple SDK installations against one DB:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">prod_checkpointer</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">DSN</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="s2">"fa_prod"</span><span class="p">)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">test_checkpointer</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">DSN</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="s2">"fa_test"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">prod_checkpointer</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">DSN</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;fa_prod&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">test_checkpointer</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">DSN</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;fa_test&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Each schema is independent; checkpoints / pending interrupts /
 idempotency rows don't cross.</p>
@@ -6754,7 +6754,7 @@ idempotency rows don't cross.</p>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">cp</span> <span class="o">=</span> <span class="n">SQLiteCheckpointer</span><span class="p">()</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">cp</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">deleted</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">prune</span><span class="p">(</span><span class="n">older_than</span><span class="o">=</span><span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">14</span><span class="p">))</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Pruned </span><span class="si">{</span><span class="n">deleted</span><span class="si">}</span><span class="s2"> rows."</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Pruned </span><span class="si">{</span><span class="n">deleted</span><span class="si">}</span><span class="s2"> rows.&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>A nightly cron job is the typical deployment.</p>
 <h2 id="custom-backends">Custom backends<a class="headerlink" href="#custom-backends" title="Permanent link">&para;</a></h2>
@@ -6822,8 +6822,8 @@ at them, so there is nothing to export. It refuses any Postgres whose database
 is not named <code>fastaiagent_test</code>, since these tests create and drop tables. To
 target a server of your own, set the variables explicitly — an explicit value
 always wins:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PG_TEST_DSN</span><span class="o">=</span><span class="s2">"postgresql://user:pw@host:5432/fastaiagent_test"</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REDIS_TEST_URL</span><span class="o">=</span><span class="s2">"redis://host:6379/15"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PG_TEST_DSN</span><span class="o">=</span><span class="s2">&quot;postgresql://user:pw@host:5432/fastaiagent_test&quot;</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REDIS_TEST_URL</span><span class="o">=</span><span class="s2">&quot;redis://host:6379/15&quot;</span>
 </code></pre></div>
 <p>With no server reachable and neither variable set, the Postgres and Redis
 parameters skip and only SQLite runs. CI never relies on that path: the
@@ -6859,8 +6859,8 @@ process is the only writer.</p>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.checkpointers.postgres</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostgresCheckpointer</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="s2">"flow"</span><span class="p">,</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="n">checkpointer</span><span class="o">=</span><span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"DATABASE_URL"</span><span class="p">]),</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="s2">&quot;flow&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="n">checkpointer</span><span class="o">=</span><span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">]),</span>
 <a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="p">)</span>
 </code></pre></div>
 <p>The atomic-claim contract guarantees correctness even when 3 replicas
@@ -6875,7 +6875,7 @@ worker polls for pending interrupts and resumes them.</p>
 <a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.chain.interrupt</span><span class="w"> </span><span class="kn">import</span> <span class="n">AlreadyResumed</span><span class="p">,</span> <span class="n">Resume</span>
 <a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.checkpointers.postgres</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostgresCheckpointer</span>
 <a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="n">cp</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"DATABASE_URL"</span><span class="p">])</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="n">cp</span> <span class="o">=</span> <span class="n">PostgresCheckpointer</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">])</span>
 <a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="n">chains_by_name</span> <span class="o">=</span> <span class="p">{</span><span class="o">...</span><span class="p">}</span>          <span class="c1"># your own registry: chain_name -&gt; Chain</span>
 <a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>
 <a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>
@@ -6980,10 +6980,10 @@ no-op, not a duplicate side effect.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6298,22 +6298,22 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">RESTTool</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent.tool</span><span class="w"> </span><span class="kn">import</span> <span class="n">tool</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"percent_of"</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;percent_of&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">percent_of</span><span class="p">(</span><span class="n">percent</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="sd">"""Return `percent` percent of `value`."""</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return `percent` percent of `value`.&quot;&quot;&quot;</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span> <span class="o">*</span> <span class="n">percent</span> <span class="o">/</span> <span class="mi">100</span><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"assistant"</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"Use tools to answer questions."</span><span class="p">,</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4.1"</span><span class="p">),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;Use tools to answer questions.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4.1&quot;</span><span class="p">),</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        <span class="n">percent_of</span><span class="p">,</span>   <span class="c1"># @tool returns a FunctionTool</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>        <span class="n">RESTTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"weather"</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="s2">"https://api.weather.com/v1"</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"GET"</span><span class="p">),</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>        <span class="n">RESTTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;weather&quot;</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="s2">&quot;https://api.weather.com/v1&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;GET&quot;</span><span class="p">),</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="p">],</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="p">)</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"What is 15</span><span class="si">% o</span><span class="s2">f 230, and what's the weather in Tokyo?"</span><span class="p">)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;What is 15</span><span class="si">% o</span><span class="s2">f 230, and what&#39;s the weather in Tokyo?&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="toolresult">ToolResult<a class="headerlink" href="#toolresult" title="Permanent link">&para;</a></h2>
 <p>Every tool execution returns a <code>ToolResult</code>:</p>
@@ -6348,21 +6348,21 @@
 </tr>
 </tbody>
 </table>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"query"</span><span class="p">:</span> <span class="s2">"test"</span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">})</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">success</span><span class="p">:</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Error: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">error</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="openai-format">OpenAI Format<a class="headerlink" href="#openai-format" title="Permanent link">&para;</a></h2>
 <p>Tools are internally converted to OpenAI function-calling format for LLM communication:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">fmt</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">to_openai_format</span><span class="p">()</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># {</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1">#   "type": "function",</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1">#   "function": {</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1">#     "name": "get_weather",</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1">#     "description": "Get current weather for a city.",</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">#     "parameters": { ... }</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1">#   &quot;type&quot;: &quot;function&quot;,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1">#   &quot;function&quot;: {</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1">#     &quot;name&quot;: &quot;get_weather&quot;,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1">#     &quot;description&quot;: &quot;Get current weather for a city.&quot;,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">#     &quot;parameters&quot;: { ... }</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1">#   }</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># }</span>
 </code></pre></div>
@@ -6414,15 +6414,15 @@ tool in the Local UI's fork dialog, to help you choose. See
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Marked explicitly by the developer — a GET is NOT auto-classified read_only.</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">weather</span> <span class="o">=</span> <span class="n">RESTTool</span><span class="p">(</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"weather"</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="s2">"https://api.weather.com/v1"</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"GET"</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">replay_class</span><span class="o">=</span><span class="s2">"read_only"</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;weather&quot;</span><span class="p">,</span> <span class="n">url</span><span class="o">=</span><span class="s2">&quot;https://api.weather.com/v1&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;GET&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">replay_class</span><span class="o">=</span><span class="s2">&quot;read_only&quot;</span><span class="p">,</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="p">)</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"upsert_user"</span><span class="p">,</span> <span class="n">replay_class</span><span class="o">=</span><span class="s2">"idempotent"</span><span class="p">)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;upsert_user&quot;</span><span class="p">,</span> <span class="n">replay_class</span><span class="o">=</span><span class="s2">&quot;idempotent&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">upsert_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="o">...</span>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"charge_card"</span><span class="p">)</span>   <span class="c1"># unmarked → resolves to "side_effecting"</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;charge_card&quot;</span><span class="p">)</span>   <span class="c1"># unmarked → resolves to &quot;side_effecting&quot;</span>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="k">def</span><span class="w"> </span><span class="nf">charge_card</span><span class="p">(</span><span class="n">amount</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="o">...</span>
 </code></pre></div>
@@ -6445,16 +6445,16 @@ tool in the Local UI's fork dialog, to help you choose. See
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Serialize</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">data</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># {</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1">#   "name": "weather",</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1">#   "description": "Get weather",</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1">#   "tool_type": "rest_api",</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1">#   "parameters": { ... },</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1">#   "config": {"url": "...", "method": "GET", ...}</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1">#   &quot;name&quot;: &quot;weather&quot;,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1">#   &quot;description&quot;: &quot;Get weather&quot;,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1">#   &quot;tool_type&quot;: &quot;rest_api&quot;,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1">#   &quot;parameters&quot;: { ... },</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1">#   &quot;config&quot;: {&quot;url&quot;: &quot;...&quot;, &quot;method&quot;: &quot;GET&quot;, ...}</span>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># }</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># Restore (auto-dispatches to correct class)</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">restored</span> <span class="o">=</span> <span class="n">Tool</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Returns RESTTool if tool_type is "rest_api", FunctionTool if "function", etc.</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Returns RESTTool if tool_type is &quot;rest_api&quot;, FunctionTool if &quot;function&quot;, etc.</span>
 </code></pre></div>
 <blockquote>
 <p><strong>FunctionTool callables and the ToolRegistry.</strong> Python function objects can't be serialized to JSON, so <code>FunctionTool.to_dict()</code> only stores the schema. To make <code>from_dict()</code> usable for <a href="../replay/">Agent Replay</a>, every <code>FunctionTool</code> that is constructed with a live <code>fn=...</code> is automatically registered in the process-wide <a href="#toolregistry"><code>ToolRegistry</code></a>. When <code>Tool.from_dict()</code> sees a tool name that's been registered, it returns the live tool (with the callable) instead of a schema-only skeleton. A replay rerun uses a registered tool only when you allow it (<code>with_tool_policy("live", allow=[...])</code>, 1.89.0).</p>
@@ -6466,18 +6466,18 @@ tool in the Local UI's fork dialog, to help you choose. See
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Creating a FunctionTool with a callable auto-registers it</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">lookup_order</span><span class="p">(</span><span class="n">order_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="sd">"""Look up an order by ID."""</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">"Order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">: shipped"</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Look up an order by ID.&quot;&quot;&quot;</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">: shipped&quot;</span>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="n">t</span> <span class="o">=</span> <span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"lookup_order"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_order</span><span class="p">)</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="k">assert</span> <span class="n">ToolRegistry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lookup_order"</span><span class="p">)</span> <span class="ow">is</span> <span class="n">t</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="n">t</span> <span class="o">=</span> <span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_order</span><span class="p">)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="k">assert</span> <span class="n">ToolRegistry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="n">t</span>
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># The @tool decorator also auto-registers</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"echo"</span><span class="p">)</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="nd">@tool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;echo&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">echo</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="k">return</span> <span class="n">msg</span>
 <a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="k">assert</span> <span class="n">ToolRegistry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"echo"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="k">assert</span> <span class="n">ToolRegistry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;echo&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 </code></pre></div>
 <h3 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h3>
 <table>
@@ -6559,13 +6559,13 @@ off by default, so unset means no change in behavior:</p>
 <p>See <a href="function-tools/#timeout-retry-output-validation">FunctionTool → Timeout, Retry &amp; Output Validation</a> for details.</p>
 <h2 id="sync-vs-async">Sync vs Async<a class="headerlink" href="#sync-vs-async" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Sync — applies the execution policy above</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"query"</span><span class="p">:</span> <span class="s2">"test"</span><span class="p">})</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">})</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Async — applies the execution policy above</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">tool</span><span class="o">.</span><span class="n">ainvoke</span><span class="p">({</span><span class="s2">"query"</span><span class="p">:</span> <span class="s2">"test"</span><span class="p">})</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">tool</span><span class="o">.</span><span class="n">ainvoke</span><span class="p">({</span><span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">})</span>
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Async, raw — bypasses the policy (no timeout / retry / output validation)</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">tool</span><span class="o">.</span><span class="n">aexecute</span><span class="p">({</span><span class="s2">"query"</span><span class="p">:</span> <span class="s2">"test"</span><span class="p">})</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">tool</span><span class="o">.</span><span class="n">aexecute</span><span class="p">({</span><span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">})</span>
 </code></pre></div>
 <p><code>execute()</code> and <code>ainvoke()</code> are the policy-aware entry points: the agent loop
 uses <code>ainvoke</code>, and so does a <a href="../chains/#tool-node-state-behavior">Chain tool node</a>
@@ -6581,9 +6581,9 @@ policy. All work from sync or async contexts (including Jupyter notebooks).</p>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">)</span>
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
 <a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"bad"</span><span class="p">:</span> <span class="s2">"args"</span><span class="p">})</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;bad&quot;</span><span class="p">:</span> <span class="s2">&quot;args&quot;</span><span class="p">})</span>
 <a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="k">except</span> <span class="n">ToolExecutionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Tool failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Tool failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
@@ -6656,10 +6656,10 @@ policy. All work from sync or async contexts (including Jupyter notebooks).</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

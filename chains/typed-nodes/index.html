@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6239,38 +6239,38 @@ don't use it behave exactly as before.</p>
 input schema, validated at the node boundary:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chain</span><span class="p">,</span> <span class="n">node</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nd">@node</span><span class="p">(</span><span class="n">output_key</span><span class="o">=</span><span class="s2">"category"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nd">@node</span><span class="p">(</span><span class="n">output_key</span><span class="o">=</span><span class="s2">&quot;category&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">classify</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="k">return</span> <span class="s2">"support"</span> <span class="k">if</span> <span class="s2">"help"</span> <span class="ow">in</span> <span class="n">text</span> <span class="k">else</span> <span class="s2">"sales"</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="k">return</span> <span class="s2">&quot;support&quot;</span> <span class="k">if</span> <span class="s2">&quot;help&quot;</span> <span class="ow">in</span> <span class="n">text</span> <span class="k">else</span> <span class="s2">&quot;sales&quot;</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">"router"</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">"classify"</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="n">classify</span><span class="p">,</span> <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"text"</span><span class="p">:</span> <span class="s2">"{{state.input}}"</span><span class="p">})</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">"input"</span><span class="p">:</span> <span class="s2">"I need help"</span><span class="p">})</span>   <span class="c1"># -&gt; state["category"] == "support"</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">chain</span> <span class="o">=</span> <span class="n">Chain</span><span class="p">(</span><span class="s2">&quot;router&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="s2">&quot;classify&quot;</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="n">classify</span><span class="p">,</span> <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;{{state.input}}&quot;</span><span class="p">})</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">chain</span><span class="o">.</span><span class="n">execute</span><span class="p">({</span><span class="s2">&quot;input&quot;</span><span class="p">:</span> <span class="s2">&quot;I need help&quot;</span><span class="p">})</span>   <span class="c1"># -&gt; state[&quot;category&quot;] == &quot;support&quot;</span>
 </code></pre></div>
 <h2 id="output_key"><code>output_key</code><a class="headerlink" href="#output_key" title="Permanent link">&para;</a></h2>
 <p>By default a node's non-dict output is stored under <code>_&lt;node_id&gt;_output</code>, and a
 dict output is merged into state. Pass <code>output_key</code> to store the node's output
 under a name you choose — clearer and collision-free:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">chain</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">"dbl"</span><span class="p">,</span> <span class="n">tool</span><span class="o">=</span><span class="n">double_tool</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">tool</span><span class="p">,</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">"x"</span><span class="p">:</span> <span class="s2">"{{state.n}}"</span><span class="p">},</span> <span class="n">output_key</span><span class="o">=</span><span class="s2">"doubled"</span><span class="p">,</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;dbl&quot;</span><span class="p">,</span> <span class="n">tool</span><span class="o">=</span><span class="n">double_tool</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">NodeType</span><span class="o">.</span><span class="n">tool</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">input_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="s2">&quot;{{state.n}}&quot;</span><span class="p">},</span> <span class="n">output_key</span><span class="o">=</span><span class="s2">&quot;doubled&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># state["doubled"] holds the tool's return value</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># state[&quot;doubled&quot;] holds the tool&#39;s return value</span>
 </code></pre></div>
 <p><code>output_key</code> works on any node type, not just <code>@node</code> ones.</p>
 <h2 id="input_schema-output_schema"><code>input_schema</code> / <code>output_schema</code><a class="headerlink" href="#input_schema-output_schema" title="Permanent link">&para;</a></h2>
 <p>Attach optional JSON schemas to validate a node's resolved inputs and its output
 at the boundary. A violation raises <code>ChainError</code> naming the offending field:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nd">@node</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">output_key</span><span class="o">=</span><span class="s2">"user"</span><span class="p">,</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">output_key</span><span class="o">=</span><span class="s2">&quot;user&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">output_schema</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"object"</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">"properties"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"id"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">}},</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        <span class="s2">"required"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">}},</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="p">},</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">)</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">def</span><span class="w"> </span><span class="nf">make_user</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">"id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"u-</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">"</span><span class="p">}</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;u-</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">}</span>
 </code></pre></div>
 <p><code>@node</code> derives <code>input_schema</code> from the function's type hints automatically (pass
 <code>validate_input=False</code> to skip it). You can also set <code>input_schema=</code> /
@@ -6351,10 +6351,10 @@ three remain separate models.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

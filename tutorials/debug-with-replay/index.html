@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -6336,17 +6336,17 @@ with traces pulled from the FastAIAgent Platform — see
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">FunctionTool</span><span class="p">,</span> <span class="n">LLMClient</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">lookup_order</span><span class="p">(</span><span class="n">order_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">orders</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ORD-001"</span><span class="p">:</span> <span class="s2">"MacBook Pro, delivered 2026-04-03"</span><span class="p">}</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">return</span> <span class="n">orders</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">order_id</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2"> not found."</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">orders</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ORD-001&quot;</span><span class="p">:</span> <span class="s2">&quot;MacBook Pro, delivered 2026-04-03&quot;</span><span class="p">}</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">return</span> <span class="n">orders</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">order_id</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"support-bot"</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">"You are a support agent. Use lookup_order to check status."</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">"openai"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o"</span><span class="p">),</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"lookup_order"</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_order</span><span class="p">)],</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;support-bot&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You are a support agent. Use lookup_order to check status.&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">llm</span><span class="o">=</span><span class="n">LLMClient</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">),</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">tools</span><span class="o">=</span><span class="p">[</span><span class="n">FunctionTool</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;lookup_order&quot;</span><span class="p">,</span> <span class="n">fn</span><span class="o">=</span><span class="n">lookup_order</span><span class="p">)],</span>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"What's the status of order ORD-001?"</span><span class="p">)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="n">result</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">&quot;What&#39;s the status of order ORD-001?&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">trace_id</span><span class="p">)</span>  <span class="c1"># the handle for everything below</span>
 </code></pre></div>
 <p>Every agent run is traced. <code>result.trace_id</code> is the only thing you
@@ -6361,15 +6361,15 @@ need to keep.</p>
 or error log, e.g. <code>Replay.load("trace_abc123")</code>.</p>
 <h2 id="3-step-through-to-find-the-failing-span">3. Step through to find the failing span<a class="headerlink" href="#3-step-through-to-find-the-failing-span" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="n">replay</span><span class="o">.</span><span class="n">step_through</span><span class="p">():</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[</span><span class="si">{</span><span class="n">step</span><span class="o">.</span><span class="n">step</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">step</span><span class="o">.</span><span class="n">span_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">step</span><span class="o">.</span><span class="n">step</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">step</span><span class="o">.</span><span class="n">span_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Each <code>ReplayStep</code> carries the span name, input, output, and
 attributes — enough to spot which step misbehaved.</p>
 <h2 id="4-fork-at-the-failing-step-and-modify-the-prompt">4. Fork at the failing step and modify the prompt<a class="headerlink" href="#4-fork-at-the-failing-step-and-modify-the-prompt" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">forked</span> <span class="o">=</span> <span class="n">replay</span><span class="o">.</span><span class="n">fork_at</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">forked</span><span class="o">.</span><span class="n">modify_prompt</span><span class="p">(</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">"You are a support agent. Use lookup_order. "</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="s2">"Reply in exactly one sentence. Never use bullet points."</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">&quot;You are a support agent. Use lookup_order. &quot;</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="s2">&quot;Reply in exactly one sentence. Never use bullet points.&quot;</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>fork_at</code> returns a <code>ForkedReplay</code> you can chain modifications on:
@@ -6378,11 +6378,11 @@ checkpoint with a modified <em>state</em>, use <code>Chain.afork</code> / <code>
 <a href="../../durability/">Durability</a>.)</p>
 <h2 id="5-rerun-and-compare">5. Rerun and compare<a class="headerlink" href="#5-rerun-and-compare" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">rerun</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="s2">"Original:"</span><span class="p">,</span> <span class="n">rerun</span><span class="o">.</span><span class="n">original_output</span><span class="p">)</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">"New:     "</span><span class="p">,</span> <span class="n">rerun</span><span class="o">.</span><span class="n">new_output</span><span class="p">)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Original:&quot;</span><span class="p">,</span> <span class="n">rerun</span><span class="o">.</span><span class="n">original_output</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;New:     &quot;</span><span class="p">,</span> <span class="n">rerun</span><span class="o">.</span><span class="n">new_output</span><span class="p">)</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">diff</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">rerun</span><span class="p">)</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nb">print</span><span class="p">(</span><span class="s2">"Diverged at step:"</span><span class="p">,</span> <span class="n">diff</span><span class="o">.</span><span class="n">diverged_at</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Diverged at step:&quot;</span><span class="p">,</span> <span class="n">diff</span><span class="o">.</span><span class="n">diverged_at</span><span class="p">)</span>
 </code></pre></div>
 <p>The rerun uses the modified prompt; <code>compare</code> shows where the original
 and rerun diverged.</p>
@@ -6392,8 +6392,8 @@ same shapes <code>Agent.run</code> does — strings, <code>Image</code>, <code>P
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastaiagent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">forked</span><span class="o">.</span><span class="n">modify_input</span><span class="p">([</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="s2">"Try with a clearer image"</span><span class="p">,</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"clearer_receipt.jpg"</span><span class="p">),</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="s2">&quot;Try with a clearer image&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">Image</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;clearer_receipt.jpg&quot;</span><span class="p">),</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">])</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">forked</span><span class="o">.</span><span class="n">rerun</span><span class="p">()</span>
 </code></pre></div>
@@ -6479,10 +6479,10 @@ side-by-side comparison view.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
