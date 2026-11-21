@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Every rule that runs leaves one child span, on a pass and on a block, carrying name, position, passed, errored, checks, action and action_taken; detail is a per-type allowlist of rule-derived values, counts and entity names, never matched text, and a type absent from the allowlist exports nothing; local capture keeps the full result, and the export policy drops detail when payloads are off.">
+  <title>Every rule that runs leaves one child span, on a pass and on a block, carrying name, position, passed, errored, checks, action and action_taken; detail is a per-type allowlist of rule-derived values, counts and entity names, never matched text, and a type absent from the allowlist exports nothing; local capture keeps the full result, and the export policy drops detail when payloads are off.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">The verdict and the trace — one span per rule, an allowlist for the detail</text>
+  <rect x="48" y="120" width="330" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">a rule runs</text>
+  <text x="68" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">pass or block, errored or not</text>
+  <polyline points="378,165 430,165" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="430,165 416.0,158.0 416.0,172.0" fill="#1baf7a"/>
+  <rect x="430" y="120" width="722" height="135.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="444" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">guardrail.&lt;name&gt;  (openinference kind GUARDRAIL)</text>
+  <text x="444" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.guardrail.name · position · passed · errored</text>
+  <text x="444" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.guardrail.checks   [{name, result: pass|block|error}]</text>
+  <text x="444" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.guardrail.action · action_taken · severity · floor</text>
+  <text x="444" y="236.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.guardrail.detail   ← the allowlisted subset of result.metadata</text>
+  <rect x="48" y="300" width="560" height="166.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="332" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">EXPORTABLE_DETAIL_KEYS — an allowlist, not a filter</text>
+  <text x="62" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">pii             backend · entities · found · counts · total</text>
+  <text x="62" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">secrets         found · counts · total</text>
+  <text x="62" y="391.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">topic           mode · matched · topics · backend</text>
+  <text x="62" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">content_safety  taxonomy · scores · thresholds · tripped · unscored</text>
+  <text x="62" y="431.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">groundedness    score · threshold · unsupported_claims (clipped)</text>
+  <text x="62" y="451.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">regex · code · schema · classifier · llm_judge   → no detail at all</text>
+  <rect x="650" y="300" width="502" height="150" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="670" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">what never reaches the span</text>
+  <text x="670" y="358" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a pii match's value, its offsets</text>
+  <text x="670" y="377" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a regex rule's matched fragment</text>
+  <text x="670" y="396" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a judge's raw reply (the message rides on the</text>
+  <text x="670" y="415" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">  exception event, gated separately)</text>
+  <polyline points="50,500 57,508 71,491" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1baf7a" text-anchor="start">proof 4: no-ssn (regex) left no detail on its span; no-email (pii) carried counts and names only</text>
+  <circle cx="60" cy="540" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="533" x2="67" y2="547" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="547" x2="67" y2="533" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eb6834" text-anchor="start">FASTAIAGENT_TRACE_PAYLOADS=0 drops detail on export; name, position, verdict and action stay</text>
+  <text x="48" y="610" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">The Local UI's Guardrails page reads the full local result; the plane reads the span.</text>
+</svg>

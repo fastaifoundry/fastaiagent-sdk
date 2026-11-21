@@ -1,0 +1,2973 @@
+# FastAIAgent SDK — full reference for coding assistants
+
+> Use when writing, changing, testing, evaluating or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform, including evaluating an agent against a platform dataset and enforcing guardrails authored on the platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
+
+This page is the `fastaiagent-sdk` skill: the main page, then one reference per area. The `fastaiagent-studio` skill follows it (building an agent through Agent Studio, needs a platform). Install both into a project with `fastaiagent skills install`.
+
+---
+
+# FastAIAgent SDK
+
+`fastaiagent` is a Python SDK for building, testing and operating AI agents. You were probably
+not trained on its current API. **Do not write fastaiagent code from memory** — read the
+reference for the area you are touching, and check what you wrote before saying it is done.
+
+Install: `pip install fastaiagent`. Extras are named in the reference that needs one
+(for example `[mcp]` for MCP tools).
+
+## The ten rules
+
+Each is a mistake assistants make today.
+
+1. **`connect()` needs a target.** Pass `target=` or set `FASTAIAGENT_TARGET`. There is no
+   default since 1.100.0, so `connect(api_key=...)` alone fails. `connect()` is only for talking
+   to a FastAIAgent platform; an agent runs fine without it.
+2. **Never invent a platform address.** `app.fastaiagent.net` is dead. Take the address from the
+   user or the environment. If you do not have one, ask. When the user gives you one, keep it in
+   `FASTAIAGENT_TARGET`, not in code.
+3. **The framework adapters are gone** (1.96.0). `fastaiagent.integrations.langchain`,
+   `.crewai` and `.pydanticai` do not exist. For an agent built in another framework use
+   `enable_otel_capture()` with that framework's own OpenTelemetry instrumentation, a plain function
+   passed to `evaluate`, `PromptRegistry().get(...).format(...)` for prompts, and `Agent.push()`
+   for platform linkage. Details: `references/changed.md`.
+4. **`discover_tools()` is gone.** Use `MCPTool.from_server(...)`, which needs the `[mcp]` extra.
+5. **`AgentMiddleware` is the one extension model.** Hooks, redaction and budgets go through it.
+   Run limits (`max_iterations`, `timeout_seconds`, `max_total_tokens`, `max_cost_usd`) live on
+   `AgentConfig`, not on `Agent`.
+6. **Give every tool a `replay_class`** (`"read_only"`, `"idempotent"` or `"side_effecting"`).
+   An HTTP GET is not read-only by assumption. Unset means `side_effecting`, the safe default.
+   The value is recorded on every tool span for a replay engine to choose between re-running a
+   tool and reusing its recorded output; the SDK's own `rerun()` blocks tools you did not supply
+   or allow (`references/tools.md`).
+7. **Never put a key in code.** Read `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `FASTAIAGENT_API_KEY`
+   and the rest from the environment. Never print or log one. If a key is not in the environment,
+   ask the user how to load it; do not search their home directory or other projects for one.
+8. **Write an offline test next to every agent** with `fastaiagent.testing.TestModel`
+   (see `references/testing.md`). A test that needs a live model key is marked and skipped
+   without one.
+9. **Start with a single agent.** Reach for `Supervisor`, `Swarm` or `Chain` only when the work
+   genuinely splits (see `references/teams.md`).
+10. **Check, then run the real thing.** Run this skill's `scripts/check_imports.py <your files>`
+    with the project's own interpreter (for example `.venv/bin/python
+    .agents/skills/fastaiagent-sdk/scripts/check_imports.py desk/agent.py`); it works from the
+    project root. Use that interpreter for every command, not a bare `python`, which can be a
+    different Python without the SDK; never report "not installed" from a bare `python`. It resolves every `fastaiagent` import and attribute against the installed SDK
+    and flags removed names. Then run your offline test. Then, if the user's model key is in the
+    environment, run the real entry point once and read what it prints. Offline tests use scripted
+    models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
+    model id or an address you have not tried:** a failing real run is evidence, your belief is
+    not. If you have no key, say you did not run it. **Check before you say something is
+    missing:** look at whether the key or setting is set (for example
+    `python -c "import os; print(bool(os.environ.get('OPENAI_API_KEY')))"`) and report what the
+    check printed; assistants have said "no key in the environment" without looking, when it was
+    there. When the user asks to *see* a run and a key is set, show the real-model run: scripted
+    models are for tests, and a `--real` switch you never use is not a run.
+
+## Where to read
+
+| You are doing | Read |
+|---|---|
+| Creating or running an agent, structured output, streaming, run limits, middleware, memory | `references/agents.md` |
+| Giving an agent tools: `@tool`, REST, MCP, deferred tools, `replay_class` | `references/tools.md` |
+| More than one agent: `Supervisor` + `Worker`, `Swarm`, `Chain` | `references/teams.md` |
+| Safety checks on input, output or tool calls | `references/guardrails.md` |
+| Measuring quality: `evaluate`, scorers, the pytest plugin, gates | `references/evals.md` |
+| Connecting to a platform: what it supplies (guardrail rules, prompts, datasets, judges, knowledge bases) and receives (traces, eval verdicts), the connected-agent checklist, push, the runner, the CLI | `references/platform.md` |
+| Guardrails authored on the platform | `references/guardrails.md`, "Plane-authored rules" |
+| Eval datasets, judges and verdicts on the platform | `references/evals.md`, "With a platform" |
+| Versioned prompts in a registry (local or on the platform), rolling out a new version | `references/platform.md`, "Prompts" |
+| Testing without a model, and platform rules offline (`plane_rules`) | `references/testing.md` |
+| Old code or old advice that no longer works | `references/changed.md` |
+
+Read only the files you need. A tool that cannot read this folder can fetch the same content as one
+page: <https://docs.fastaiagent.net/llms-full.txt> (index: <https://docs.fastaiagent.net/llms.txt>).
+
+## A minimal agent and its offline test
+
+```python
+from fastaiagent import Agent, tool
+from fastaiagent.testing import TestModel
+
+
+@tool(description="Add two integers.", replay_class="read_only")
+def add(a: int, b: int) -> int:
+    return a + b
+
+
+def build_agent(llm=None) -> Agent:
+    return Agent(
+        name="calculator",
+        system_prompt="Use the add tool for arithmetic.",
+        llm=llm,
+        tools=[add],
+    )
+
+
+def test_calculator_answers_offline():
+    agent = build_agent(llm=TestModel("The answer is 4."))
+    result = agent.run("What is 2 + 2?")
+    assert "4" in result.output
+```
+
+For a real run, pass `llm=LLMClient(provider=..., model=...)` with the key in the environment
+(`references/agents.md` has the signature and the provider names).
+
+## Starting a new project
+
+A project that only has agents and tests is not finished: tests must run with plain `pytest`, and
+something must actually start the agent.
+
+```text
+my_app/
+  agents.py        build_agent(llm=None) and the other builders
+  main.py          the entry point (below)
+  tests/           offline tests, TestModel or FunctionModel
+  pytest.ini       [pytest]  then  pythonpath = .   (without it plain `pytest` cannot import my_app)
+  .gitignore       .fastaiagent/   (local traces and the eval database)
+```
+
+An entry point loads the keys from the environment, connects only when a platform is configured,
+and always ends with `disconnect()`. A helper such as `connect_platform()` that nothing calls
+sends no traces, and a short script can exit before the background export finishes:
+
+```python
+import os
+import sys
+
+import fastaiagent as fa
+from fastaiagent import LLMClient
+
+from my_app.agents import build_agent
+
+
+def main(question: str) -> None:
+    if os.environ.get("FASTAIAGENT_API_KEY") and os.environ.get("FASTAIAGENT_TARGET"):
+        fa.connect(
+            api_key=os.environ["FASTAIAGENT_API_KEY"],
+            target=os.environ["FASTAIAGENT_TARGET"],
+        )
+    try:
+        agent = build_agent(llm=LLMClient(provider="openai", model="gpt-5-mini"))
+        print(agent.run(question).output)
+    finally:
+        fa.disconnect()  # flushes pending traces first; a no-op when never connected
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])
+```
+
+Build what was asked. Do not add tools, fake data, aliases, command-line flags or helper layers the
+user did not ask for; say what you would add and let them decide. That includes handling for cases
+that do not exist yet (rule types the platform does not have, providers the user does not use):
+build for what is there. When a choice has a cost the user should hear
+(for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
+guardrail is coarse), say it in your summary.
+
+## When something fails
+
+- **`ImportError` / `AttributeError` on a `fastaiagent` name:** you guessed it. Run
+  `scripts/check_imports.py`, then look the name up in the reference. Do not try variants.
+- **`connect` raises about a target:** rule 1.
+- **A feature needs an extra** (MCP, vector stores, Postgres): the error names it; install it
+  and tell the user, do not catch and ignore it.
+- **A guardrail reports it could not run:** that is not a pass. Fix its configuration
+  (`references/guardrails.md`).
+
+## Reporting
+
+When you finish, say which files you wrote, what `check_imports.py` printed, what your offline
+test did, and what you ran for real (the entry point, the model, the platform) with what it
+printed. If you could not run something (no key, no network, no server), say so; do not claim it
+works.
+
+---
+
+# What older answers get wrong
+
+Read this when your memory of the SDK predates 1.102.0, or when code or advice you recall fails: each row is something that was removed, renamed or changed in meaning between 1.40 and 1.102.0. Purely additive features are left out.
+
+Rule of thumb: if an answer from memory imports a framework adapter, calls `connect()` with only a key, or waits for an approval inside `arun()`, it is out of date.
+
+| Old (what you may remember) | Now | Since |
+|---|---|---|
+| An output guardrail such as `allowed_topics` on a `Swarm` member stops the swarm at its first handoff ("Off topic") | The handoff turn is not judged; the member that answers is. Its `stop_reason` is `"handoff"` | 1.102.0 |
+| `PlatformAPI` has only `get` and `post` and returns a dict; `PlatformRateLimitError` has only a message | `patch`, `delete`, `post_multipart`, `download` (and async twins); the body is any JSON; `PlatformRateLimitError.retry_after` | 1.102.0 |
+| `fa.connect(api_key=...)` with no target, defaulting to `app.fastaiagent.net` | `target=` is required, else `FASTAIAGENT_TARGET`, else `ValueError`. The old host is dead; never write an address you were not given. `PlatformAPI(base_url=...)` is required too. | 1.100.0 |
+| `fastaiagent connect` / `push` falling back to a built-in host | `--target`, else `FASTAIAGENT_TARGET`; with neither, nothing is saved and exit code is 1. | 1.100.0 |
+| `fastaiagent connect` prints "Connected" and exits 0 whatever happened | Unreachable or 5xx plane: saves, says "not verified", exit 1. A non-plane answer (e.g. 404): saves nothing, exit 1. Python `fa.connect()` still connects offline and only logs a warning. | 1.97.0 |
+| `from fastaiagent.integrations.langchain import enable` (also `.crewai`, `.pydanticai`) | Modules removed. Use the framework's own OpenInference instrumentor plus `fa.enable_otel_capture()`. | 1.96.0 |
+| `with_guardrails(agent, ...)` around a framework agent | Call `Guardrail.execute(...)` (or `fa.run_guardrail`) around the framework call and act on the result. | 1.96.0 |
+| `as_evaluable(agent)` for `fa.evaluate` | Pass a plain function `agent_fn(input) -> output` as the first argument of `fa.evaluate`. | 1.96.0 |
+| `kb_as_retriever(kb)` / `kb_as_tool(kb)` | Call `kb.search(...)` inside the framework's own tool. | 1.96.0 |
+| `prompt_from_registry(name)` | `PromptRegistry().get(name).format(...)`. For lineage on a foreign root span: `fa.trace_context("agent.x", **prompt.trace_attributes())`. | 1.96.0 / 1.98.0 |
+| `register_agent(agent, name=...)` and `integrations.agent_name(name)` | `fa.Agent(name=...).push()` while connected, and `fa.trace_context("agent.<name>", **{"agent.name": name})` around the framework call. | 1.96.0 |
+| `pip install "fastaiagent[langchain]"` / `[crewai]` / `[pydanticai]` | Extras no longer exist: pip installs core and warns. `fastaiagent.integrations` keeps only `openai` and `anthropic` (`.enable()`). | 1.96.0 |
+| `fastaiagent.guardrail.actions.harness_halts` | Removed. Act on the result's `action_taken`. | 1.96.0 |
+| `discover_tools(url)` for MCP | `MCPTool.from_server(...)` / `await MCPTool.afrom_server(...)` return one ready `MCPTool` per server tool. Needs `pip install "fastaiagent[mcp]"` (`[mcp-server]` is an alias). The hand-written JSON-RPC client is gone; it runs on the official `mcp` library. | 1.92.0 |
+| `fastaiagent agent serve --reload` | Removed (it never worked). | 1.92.0 |
+| `MCPTool`/`RESTTool` reaching a Tailscale or other CGNAT (`100.64.0.0/10`) host | Refused as non-global. Set `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` to allow on purpose. | 1.92.0 |
+| `await agent.arun(..., wait_for_approval=True)` blocks for a console approval | Raises `ValueError` before anything runs. Default is `False`: a policy pause returns `status="paused"` and your app resumes it with `aresume(run_id, resume_value=Resume(approved=...))`. `wait_for_approval=False` is accepted and does nothing. | 1.74.0 / 1.76.0 |
+| An agent without a checkpointer swallowing a pause as `output=""` | Callers that cannot hold a pause report it (MCP error, serve response) instead of treating `""` as the answer. | 1.78.0 |
+| `execute_guardrails(...)` returns `list[GuardrailResult]` | Returns `GuardrailOutcome` (verdicts plus the value to carry forward after `mask`/`override`). Iteration, indexing, `len()` and `list()` still work; only `isinstance(x, list)` breaks. Imported from `fastaiagent.guardrail.executor`. | 1.57.0 |
+| A failed guardrail always stops the run | Each rule has an `action`: `block`, `warn`, `mask`, `override`, `reask`. `mask`/`override` rewrite the payload; where a rewrite cannot be applied faithfully (streamed output, multimodal input) the run blocks. | 1.57.0 |
+| A guardrail `llm={"api_key": ...}` config dict | Any credential (or non-shareable field) raises `ValueError` at construction. Use the provider env var, or pass a live `LLMClient(api_key=...)`. | 1.89.0 |
+| Misspelt `position=` / `guardrail_type=` builds a guardrail that never runs; `code` guardrail with no `fn`, `regex` with empty pattern pass silently | Misspelt values raise `ValueError` at construction; a `code` rule with no `fn` and an empty `regex` pattern raise instead of passing. | 1.93.0 / 1.64.0 |
+| `TraceStore().list_traces()` returns the newest 100 of all time and ignores filters | Honours `last_hours` (default 24; `None` = all time), `limit`, `name_filter`, `agent_name`. Unknown filters only warn. | 1.81.0 |
+| Replay `fork_at(...).rerun()` re-runs every tool for real | Tools you did not supply are blocked (model gets an error result). Opt in with `.with_tool_policy("live", allow=[...])`, `.with_tool_override(name, fn)` or `.with_tool_stub(name, returns=...)`, or `FASTAIAGENT_REPLAY_TOOL_POLICY=live`. | 1.89.0 |
+| Replay of a chain or supervisor trace "works" | `fork_at()` / `rerun()` raise `ReplayError` on a chain or supervisor root (use `Chain.afork` / `aresume`). Only a standalone agent trace replays. | 1.95.0 |
+| Replay reruns and Playground calls counted as production runs and exported | Local experiments: not exported unless `FASTAIAGENT_EXPORT_EXPERIMENTS=1` / `connect(export_experiments=True)`. | 1.89.0 |
+| `connect()` uploads up to a week of traces recorded while offline | Only spans recorded while a platform exporter is registered are queued; offline history stays local (`TraceData.publish()` sends one on demand). | 1.95.0 |
+| `FASTAIAGENT_TRACE_PAYLOADS=0` stops payloads being captured | Egress-only: `local.db`, UI and Replay stay full fidelity; payloads are stripped on the way to the plane and any `add_exporter` target. | 1.50.0 |
+| `FASTAIAGENT_TRACE_ENABLED=0` / `FASTAIAGENT_EXPORT_EVALS=yes` / `FASTAIAGENT_EXPORT_CHECKPOINTS=false` ignored or mis-parsed | All parse as booleans (`1/true/yes/on`, `0/false/no/off`). `TRACE_ENABLED=0` really stops local capture (`result.trace_id` is `None`). An unparseable egress value fails closed. | 1.67.0 |
+| `pip install fastaiagent` brings `pymupdf`; PDF text and `LocalKB.add("x.pdf")` just work | Not in core. Install `fastaiagent[kb]` (engine is `pypdfium2` since 1.56.0); `pdf_mode="native"` needs no library. | 1.55.0 / 1.56.0 |
+| `PromptRegistry.register(name, text, version=n)` overwrites an existing version | Same text and metadata is a no-op; different text raises `ValueError`. Omit `version=` for the next one. | 1.88.0 |
+| `set_alias(name, version, alias)` accepts a missing version; `diff()` prints both templates | `set_alias` raises `PromptNotFoundError`; `diff()` is a unified diff. | 1.89.0 |
+| Chain tool node that returns an error leaves the chain `completed` | Raises `ChainError` naming node, tool and error; a checkpointed run is marked `failed` (resumable). A chain approval gate with no handler refuses; a rejection stops the chain. | 1.78.0 / 1.77.0 / 1.67.0 |
+| `chain.resume()` / `aresume` on a finished run re-executes it | Raises `AlreadyResumed`; a failed run still resumes. Use `fork()` to branch from a finished run. `PostgresCheckpointer.put` with a repeated `checkpoint_id` raises. | 1.65.0 |
+| `Memory(window=0)` keeps everything | Keeps no messages (facts, summary and recall still work); a negative window raises `ValueError`. | 1.97.0 |
+| `Memory(learn=)` extracts from assistant replies; a shared window when the user cannot be resolved; `forget(tier="global")` wipes all agents' facts; `Memory(agent_id="")` | Learns from the user's messages only. An unresolvable user gets no conversation memory. `forget(tier="global")` needs `agent_id=` or `id="*"`. `agent_id=""` raises `ValueError`. | 1.80.0 / 1.81.0 |
+| `Supervisor` result `tokens_used` / `cost` count only the lead | They count the whole team (workers, `validate_outputs` retries, routing). Team members are now gated by approval policies and plane guardrails on every run. | 1.99.0 |
+| `PlatformKB(...).as_tool()` named `search_<uuid>` and cut hits to 200 characters | `PlatformKB(kb_id, name=, description=)` gives `search_<name>`; whole chunks returned. | 1.99.0 |
+| `Agent.stream()` returns the joined text of every turn | Returns what `run()` returns (the final reply). Streamed and resumed runs open one root span; pass `trace=False` to opt out. | 1.91.0 / 1.67.0 |
+| Anthropic/Bedrock `max_tokens` defaults to 4096; cached tokens priced as input; one rate covers all `gpt-5.x` | Defaults to the model's own maximum; cached and cache-write tokens have their own rates; an unlisted model is unpriced, never mispriced, so cost figures move. | 1.91.0 |
+| An HTTP 429 raises a generic `LLMProviderError` | `LLMRateLimitError` (a subclass, so old handlers still catch it) with `retry_after`. | 1.91.0 |
+| `ROUGEScore(variant="rouge-l")` result key `"rouge"` | Named `"rouge-l"` (the default stays `"rouge"`). | 1.95.0 |
+| Eval errors scored as failures; `eval run` exits 1 for a missing dataset | A check that could not run is `errored` and one that does not apply is `skipped`; neither is a pass or a fail. `eval run` exits 3 ("run invalid") for a missing dataset, an agent that fails to import, or unmeasured gated scorers. | 1.89.0 / 1.97.0 |
+| `traces prune` deletes everything already synced; offline spans looked "synced" | Deletes only spans the plane confirmed. Everything recorded before 1.97.0 is kept; use `fastaiagent traces purge` to delete by scope. | 1.97.0 |
+| `FASTAIAGENT_UI_ENABLED=1` turns on guardrail event logging | Ignored; guardrail events follow `FASTAIAGENT_TRACE_ENABLED`. | 1.89.0 |
+
+---
+
+# Tools
+
+Read this before defining or changing any tool: `@tool`, `FunctionTool`, `RESTTool`, `MCPTool`, the tool registry, deferred tools, `replay_class`, or a tool-call budget. Agent construction and middleware are in `agents.md`.
+
+## Imports
+
+- `from fastaiagent.tool import tool, FunctionTool, RESTTool, MCPTool, ToolRegistry, ToolResult, Tool` (all of them also import from `fastaiagent`).
+- `fastaiagent.tool` is both the package and, at the top level, the decorator. Write `from fastaiagent.tool import X`; do not write `import fastaiagent.tool as t` and expect the module.
+- `Agent(tools=[...])` takes `Tool` instances only. A plain function in that list fails; wrap it first.
+
+## @tool and FunctionTool
+
+```signature
+fastaiagent.tool.function.tool(name=, description=, replay_class=, validate_args=, timeout=, max_retries=, retry_delay=, output_type=, register=, deferred=)
+fastaiagent.FunctionTool(name, fn=, description=, parameters=, replay_class=, validate_args=, timeout=, max_retries=, retry_delay=, output_type=, register=, deferred=)
+```
+
+- `@tool(name="x")` and bare `@tool` both work. The result is a `FunctionTool`, not your function: `my_tool("a")` raises `TypeError`. Run it with `my_tool.execute({"arg": "a"})` (sync) or `await my_tool.aexecute(...)`; keep a separate plain function if you also need to call it directly.
+- `FunctionTool(name=..., fn=...)`: `name` is required and is the name the model sees. With `@tool`, `name` defaults to the function name.
+- The JSON schema is generated from type hints. Give every parameter a type hint: an unannotated parameter is typed `str`. Parameters without a default are `required`. Pydantic models, `Enum`, `Literal`, `Optional` produce a full schema.
+- Parameter descriptions come from the docstring (`Args:` Google style, NumPy, or `:param x:`); the description is the docstring unless `description=` is given. Write a one-line docstring: it is what the model reads to decide when to call the tool. Pass `parameters=` (a JSON schema dict) to override generation.
+- A parameter annotated `RunContext[T]` receives `Agent.run(context=RunContext(state=...))` and is hidden from the model. If the run has no `context=`, the call fails with a missing-argument error that is fed back to the model.
+- `validate_args=True` (default) coerces the model's arguments to your hints (`"21"` becomes `21`). Invalid arguments return an error `ToolResult` the model sees; the function is not called.
+- `async def` tools are supported. A sync tool with `timeout=` runs in a worker thread: on timeout the agent moves on, but the thread cannot be killed and finishes in the background.
+- `timeout=` (seconds, must be > 0), `max_retries=` (>= 0) with exponential backoff `retry_delay * 2**attempt`, `output_type=` (validates/coerces the return value; a mismatch becomes an error result). Invalid values raise `ValueError` at construction. Only set `max_retries` on tools that are safe to repeat.
+- A tool that raises does not abort the run: after retries the agent loop hands the model `Error: Tool '<name>' failed: ...`. Calling `.execute()` yourself raises `ToolExecutionError` (`fastaiagent._internal.errors`).
+- `ToolResult(output=, error=, metadata=)`: `.success` is `error is None`. A custom tool may return `ToolResult(error="...")` instead of raising.
+- Tool names must be unique inside one agent (middleware tools included, `ValueError`), and `final_result` is reserved when `output_mode="tool"`.
+
+```python
+from fastaiagent import Agent
+from fastaiagent.testing import FunctionModel
+from fastaiagent.tool import tool
+
+
+@tool(name="add", replay_class="read_only")
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+
+assert add.execute({"a": "1", "b": 2}).output == 3  # "1" is coerced to 1
+
+
+def responder(messages):
+    if any(m.role.value == "tool" for m in messages):
+        return "3"
+    return "", [{"name": "add", "arguments": {"a": 1, "b": 2}}]
+
+
+result = Agent(name="calc", llm=FunctionModel(responder), tools=[add]).run("1+2?")
+assert result.output == "3"
+```
+
+```python
+from dataclasses import dataclass
+
+from fastaiagent import Agent, RunContext
+from fastaiagent.testing import FunctionModel
+from fastaiagent.tool import tool
+
+
+@dataclass
+class Deps:
+    tenant: str
+
+
+@tool(name="whoami", replay_class="read_only", timeout=5, max_retries=1)
+def whoami(ctx: RunContext[Deps], greeting: str) -> str:
+    """Greet the current tenant.
+
+    Args:
+        greeting: the greeting word to use
+    """
+    return f"{greeting} {ctx.state.tenant}"
+
+
+assert "ctx" not in whoami.parameters["properties"]  # injected, hidden from the model
+
+
+def responder(messages):
+    tool_msgs = [m.content for m in messages if m.role.value == "tool"]
+    if tool_msgs:
+        return tool_msgs[-1]
+    return "", [{"name": "whoami", "arguments": {"greeting": "hi"}}]
+
+
+agent = Agent(name="ctx", llm=FunctionModel(responder), tools=[whoami])
+assert agent.run("go", context=RunContext(state=Deps(tenant="acme"))).output == "hi acme"
+```
+
+## ToolRegistry
+
+```signature
+fastaiagent.ToolRegistry.register(tool)
+fastaiagent.ToolRegistry.get(name)
+fastaiagent.ToolRegistry.all()
+fastaiagent.ToolRegistry.unregister(name)
+fastaiagent.ToolRegistry.clear()
+```
+
+- Every `FunctionTool` with a function registers itself by name at construction (`register=True`). `Agent.from_dict` and replay use the registry to rebind a tool name to live code. It is process-wide and last write wins: two tools with the same name silently replace each other. Give tools distinct names.
+- `register=False` keeps a tool out (use it for test doubles and stubs, otherwise they replace the real tool for every later rebuild).
+- `ToolRegistry.clear()` is for tests only.
+
+## RESTTool
+
+```signature
+fastaiagent.RESTTool(name, url, method=, headers=, body_mapping=, description=, parameters=, replay_class=, timeout=, max_retries=, retry_delay=, output_type=, deferred=)
+```
+
+- `method` defaults to `"GET"` and is upper-cased. `url` and `name` are required.
+- Pass `parameters=` (JSON schema). Without it the schema is empty and the model has no arguments to send.
+- `body_mapping` decides where the arguments go: `"json_body"` (the default) sends them as a JSON body, even for GET; `"query_params"` puts them in the query string; `"path_params"` replaces `{placeholders}` in the URL. Use `query_params` for GET, `json_body` for POST/PUT, `path_params` for `/orders/{order_id}`. Any other value sends nothing, without error.
+- `path_params` refuses an argument that changes the host (raises `ToolExecutionError`).
+- The response is parsed as JSON, else returned as text; `metadata` carries `status_code` and `url`. A non-2xx status raises `ToolExecutionError`, so the model sees `Error: ...`.
+- The HTTP call has fixed limits (30 s, 5 redirects, 25 MiB). `timeout=` is the tool-level wait on top.
+- Private, loopback and cloud-metadata addresses are refused. `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` allows intranet APIs.
+- Header values are used at request time but serialized as `[redacted]` (`to_dict()`, traces, pushed definitions). A tool rebuilt from a trace or definition refuses to run with that placeholder (an error result), so the original tool must be supplied again. Read credentials from environment variables; never hard-code them in a header.
+- GET does not mean read-only: set `replay_class` deliberately (below).
+
+```python
+import os
+
+from fastaiagent import RESTTool
+
+weather = RESTTool(
+    name="get_forecast",
+    description="Get the forecast for a city.",
+    url="https://api.example.com/v1/forecast",
+    method="GET",
+    headers={"X-API-Key": os.environ.get("WEATHER_API_KEY", "")},
+    body_mapping="query_params",
+    parameters={
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+    },
+    replay_class="read_only",  # a pure lookup, marked on purpose
+    timeout=20,
+)
+assert weather.method == "GET" and weather.to_dict()["config"]["headers"]["X-API-Key"] == "[redacted]"
+```
+
+## MCPTool (needs the `mcp` extra)
+
+```bash
+pip install "fastaiagent[mcp]"
+```
+
+`fastaiagent[mcp-server]` is the same dependency (`mcp>=1.24,<2`), used for `Agent.as_mcp_server`. Without it, calling an `MCPTool` raises `ImportError` with that install line.
+
+```signature
+fastaiagent.MCPTool(name, server_url=, tool_name=, auth_token=, description=, parameters=, replay_class=, command=, env=, timeout=, max_retries=, retry_delay=, output_type=, deferred=)
+fastaiagent.MCPTool.from_server(server_url=, auth_token=, command=, env=, **tool_kwargs)
+fastaiagent.MCPTool.afrom_server(server_url=, auth_token=, command=, env=, **tool_kwargs)
+```
+
+- Prefer `MCPTool.from_server(...)`: it connects, lists the server's tools and returns one ready `MCPTool` per tool (name, description, schema filled in). `afrom_server` is the async form; `from_server` also works inside a running loop.
+- Pass `server_url=` (remote, streamable HTTP) or `command=[...]` (local subprocess over stdio), never both (`ValueError`). `env=` adds to a minimal environment for local servers.
+- `**tool_kwargs` (`replay_class=`, `timeout=`, `max_retries=`, `deferred=`...) apply to every returned tool. Set `replay_class` here once, per server, after checking what its tools do; mixed servers need per-tool classification afterwards.
+- Every call opens a session, calls, and closes it (a local server restarts per call). The handshake gives up after 30 s; a call waits `timeout`, else 300 s.
+- A server `isError` reply becomes an error result; an unreachable or non-MCP server raises `ToolExecutionError`.
+- `to_dict()` carries only `server_url` and `tool_name`. `auth_token`, `command` and `env` are never serialized, so a `command=` tool rebuilt from a payload cannot run. HTTP addresses pass the same private-network check as `RESTTool` (loopback allowed).
+
+```python
+from fastaiagent import Agent, LLMClient, MCPTool
+
+
+def build_agent() -> Agent:
+    # needs: the mcp extra and a reachable MCP server (and OPENAI_API_KEY for the model)
+    tools = MCPTool.from_server(
+        command=["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp/docs"],
+        replay_class="read_only",  # true only because this server's tools only read
+        timeout=30,
+    )
+    return Agent(name="files", llm=LLMClient(provider="openai", model="gpt-4o-mini"), tools=tools)
+```
+
+**An MCP server is optional infrastructure.** `from_server` connects when it is called, so an agent
+builder that calls it at construction makes the whole app (every agent, every question) fail when
+the server is down or not configured. Build the tool only when the server is configured, and
+without it give the agent no tool and an instruction to say the lookup is unavailable (not to guess).
+Do not make up a server address; take it from the user or the environment.
+
+**Test it against a real server, not a fake.** Do not monkeypatch `from_server` or the tool's call:
+that tests your wiring, never MCP. A local stdio server needs no port and no network. Put it next to
+the tests (needs the `mcp` extra):
+
+```python
+# tests/rates_server.py
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("rates")
+
+
+@mcp.tool()
+def get_shipping_rates(zip_code: str, weight_kg: float) -> str:
+    """Shipping rates for a destination zip code and a package weight in kg."""
+    return f"standard: ${4.5 + weight_kg * 1.2:.2f} to {zip_code}"
+
+
+if __name__ == "__main__":
+    mcp.run()  # stdio
+```
+
+```python
+# tests/test_rates.py
+import sys
+from pathlib import Path
+
+from fastaiagent import MCPTool
+
+SERVER = str(Path(__file__).parent / "rates_server.py")
+
+
+def test_the_real_mcp_tool_is_found_and_called():
+    tools = MCPTool.from_server(command=[sys.executable, SERVER], replay_class="read_only")
+    assert [t.name for t in tools] == ["get_shipping_rates"]
+    result = tools[0].execute({"zip_code": "94105", "weight_kg": 2})
+    assert result.error is None
+    assert "94105" in result.output
+```
+
+**Test the transport the app uses.** The test above proves stdio. An app that connects with
+`server_url=` (streamable HTTP) takes a different path that this test never runs. Either test that
+path too (start the same server with `mcp.run(transport="streamable-http")` in an `e2e`-marked test
+and connect by URL), or say in your summary that the HTTP path is untested. Then run the app once
+against the real server, as `SKILL.md` rule 10 asks.
+
+## Deferred tools
+
+- `deferred=True` (on `@tool`, `FunctionTool`, `RESTTool`, `MCPTool`, or via `from_server(deferred=True)`) keeps a tool's definition out of the model request until needed. The model is offered one built-in tool, `load_tools(names)`, whose description lists each deferred tool by name and first docstring line; a loaded tool stays available for the rest of the run.
+- Use it for large toolsets (an MCP server with dozens of tools). Write a good first docstring line: it is all the model sees before loading.
+- Calling a deferred tool that is not loaded returns an error telling the model to call `load_tools`. `load_tools` disappears once everything is loaded. It is local behaviour: `deferred` is not in `to_dict()`.
+
+## replay_class: set it on every tool
+
+```signature
+fastaiagent.trace.replay.ForkedReplay.with_tool_policy(policy=, allow=)
+fastaiagent.trace.replay.ForkedReplay.with_tool_override(name, tool)
+fastaiagent.trace.replay.ForkedReplay.with_tool_stub(name, returns)
+```
+
+Exact values (any other string raises `ValueError` at construction, including through `from_dict`):
+
+| `replay_class` | Meaning | A replay engine that reads it |
+|---|---|---|
+| `"read_only"` | No side effects; safe to call again | May re-execute the tool |
+| `"idempotent"` | Same arguments converge to the same state | Injects the recorded output |
+| `"side_effecting"` | Writes, payments, email, anything observable | Injects the recorded output, never re-executes |
+
+- Unset means `"side_effecting"` (the safe default). It is never inferred: a `GET` `RESTTool`, or a function named `get_...`, is not assumed `read_only`, because a GET can have effects (a trigger endpoint, a counter, a billed call) and guessing wrong would re-fire it during replay.
+- Do set it explicitly on every tool, deliberately: `read_only` for pure lookups, `idempotent` for upserts keyed by an id, `side_effecting` for the rest. Don't leave a pure lookup unmarked just because the default is safe: a replay engine can then never re-run it and only replays the recorded output. Don't mark something `read_only` to make a replay "work": a wrong `read_only` re-fires real effects.
+- The value is serialized in `to_dict()` and stamped on every tool span as `fastaiagent.tool.replay_class` (provider-run tools and unknown tool names get `side_effecting`). An external replay engine reading traces uses that attribute to choose inject versus execute.
+- The SDK's own `ForkedReplay.rerun()` does not read it. By default it blocks every tool you did not supply or allow (policy `block`), whatever its class, and REST/MCP tools rebuilt from a trace run only when named in `allow=`. Choose per rerun:
+  - `with_tool_policy("live", allow=["lookup_order"])` runs the registered function live (`block`, `error`, `live`).
+  - `with_tool_override(name, tool_or_callable)` replaces a tool; `with_tool_stub(name, returns=...)` returns a canned value.
+
+```python
+from fastaiagent import Replay
+
+
+def rerun_without_side_effects(trace_id: str, step: int):
+    # needs: a trace in the local trace store
+    forked = Replay.load(trace_id).fork_at(step)
+    forked.with_tool_policy("block", allow=["lookup_order"])  # lookup_order is read_only
+    forked.with_tool_stub("charge_card", returns="ok")
+    return forked.rerun()
+```
+
+## Tool budgets and call limits
+
+```signature
+fastaiagent.ToolBudget(max_calls=, message=)
+```
+
+- `Agent(middleware=[ToolBudget(max_calls=5)])` caps tool invocations per run. On the call after the cap the run ends cooperatively: `result.stop_reason == "tool_budget"`, `result.output == message`, no exception. The count is checkpointed, so a resumed run keeps counting. `max_calls` must be >= 1.
+- It counts calls, not model turns. For loop length use `AgentConfig(max_iterations=)`. For spend use `AgentConfig(max_total_tokens=, max_cost_usd=)` (see `agents.md`).
+
+```signature
+fastaiagent.check_tool_call(tool_name, tool_input, agent)
+fastaiagent.acheck_tool_call(tool_name, tool_input, agent)
+```
+
+- `check_tool_call` is for tools you run yourself, outside `fa.Agent` (your own loop or another framework's tool). It returns a `ToolDecision` (`.decision` is `"allow"`, `"deny"` or `"require_approval"`, plus `.reason`) from the managed approval policy; it never pauses, you act on the verdict. `agent=` is a pushed agent's name or its id.
+- It allows when the SDK is not connected or no policy matches, and denies when the policy check cannot be reached. `fa.Agent` applies this gate to its own tools automatically; do not call it from inside one.
+
+## Other tool kinds
+
+- `decision_tool(questions, llm=, name=, description=)` gives an agent the Decisions API as a `FunctionTool`.
+- `web_search()`, `code_execution()`, `file_search(stores)` are provider-run tools (`ProviderTool`) executed by the model's provider. They need a provider that supports them, and a `tool_call` guardrail cannot see their arguments beforehand.
+- Knowledge bases expose retrieval with `LocalKB.as_tool()`.
+
+---
+
+# Testing agents offline
+
+Read this before writing or changing any test for code that builds a `fastaiagent` `Agent`, `Chain`, `Supervisor` or `Swarm`; every test here runs with no network and no API key.
+
+## The two fakes
+
+`fastaiagent.testing` has exactly two classes. Both subclass `LLMClient` (they are not mocks), never make an HTTP call, and emit real trace spans tagged provider `"test"`, so tools, guardrails, middleware, memory, tracing and evals run for real.
+
+```signature
+fastaiagent.testing.TestModel(response=, tool_calls=, usage=, model=, delay_ms=, decisions=)
+fastaiagent.testing.FunctionModel(fn, model=, delay_ms=, decide_fn=)
+```
+
+- `TestModel(response="ok")` returns the same text on every call.
+- `TestModel(response=["a", "b"])` plays a tape: call 1 returns `a`, call 2 `b`, and every later call repeats the **last** entry (sticky). An agent that over-runs its script does not fail loudly.
+- `tool_calls=[{"name": ..., "arguments": {...}, "id": ...}]` attaches to the **first** turn only (`id` optional, defaults to `call_<n>`). Pair it with a list `response` to script "call a tool, then answer": `response=["", "final answer"]`.
+- `usage=(prompt_tokens, completion_tokens)` sets reported tokens. `delay_ms` adds latency. `model=` only changes the name shown in traces.
+- `decisions=` supplies canned results for `llm.decide()` (the Decisions API); without it `decide()` raises `ValueError`.
+- `FunctionModel(fn)`: `fn(messages)` gets the whole `list[Message]` and may be sync or async. Return `"text"`, `("text", [tool_call_dict_or_ToolCall, ...])` (use `""` for a tool-call-only turn), or an `LLMResponse`. Anything else raises `TypeError`.
+- Both record every call in `.calls`: a list of `{"messages": [...], "tools": [...] | None, "kwargs": {...}}`. Assert on it to check the prompt the agent really sent. Messages have `.role` (a `MessageRole`; compare `.role.value`) and `.content`.
+
+Do use `TestModel` when the reply is fixed and `FunctionModel` when the reply depends on the conversation or you need turn state. Don't script a multi-turn tool flow with a single-string `TestModel(response="", tool_calls=[...])` — the sticky last turn repeats the tool call forever and the run dies with a max-iterations error (default limit 10, `AgentConfig(max_iterations=)`).
+
+## Minimal offline test
+
+```python
+from fastaiagent import Agent
+from fastaiagent.testing import TestModel
+
+def test_agent_answers():
+    llm = TestModel(response="Paris")
+    agent = Agent(name="geo", system_prompt="Answer in one word.", llm=llm)
+    result = agent.run("Capital of France?")
+    assert result.output == "Paris"
+    sent = llm.calls[0]["messages"]
+    assert [(m.role.value, m.content) for m in sent] == [
+        ("system", "Answer in one word."),
+        ("user", "Capital of France?"),
+    ]
+
+test_agent_answers()
+```
+
+## Tool calls: script them and assert on them
+
+```python
+from fastaiagent import Agent
+from fastaiagent.testing import FunctionModel, TestModel
+from fastaiagent.tool import tool
+
+@tool()
+def get_weather(city: str) -> str:
+    """Return the weather for a city."""
+    return f"sunny in {city}"
+
+def test_tool_scripted_with_testmodel():
+    llm = TestModel(
+        response=["", "It is sunny in Paris."],
+        tool_calls=[{"name": "get_weather", "arguments": {"city": "Paris"}}],
+    )
+    result = Agent(name="w", llm=llm, tools=[get_weather]).run("Weather in Paris?")
+    assert result.output == "It is sunny in Paris."
+    assert [c["tool_name"] for c in result.tool_calls] == ["get_weather"]
+    assert result.tool_calls[0]["arguments"] == {"city": "Paris"}
+    assert result.tool_calls[0]["output"] == "sunny in Paris"
+    assert len(llm.calls) == 2                       # one turn per script entry
+    assert llm.calls[1]["messages"][-1].content == "sunny in Paris"   # tool result fed back
+
+def test_tool_scripted_with_functionmodel():
+    def responder(messages):
+        if messages[-1].role.value == "tool":        # branch on conversation state
+            return f"Done: {messages[-1].content}"
+        return "", [{"name": "get_weather", "arguments": {"city": "Rome"}}]
+
+    result = Agent(name="w", llm=FunctionModel(responder), tools=[get_weather]).run("go")
+    assert result.output == "Done: sunny in Rome"
+
+test_tool_scripted_with_testmodel()
+test_tool_scripted_with_functionmodel()
+```
+
+`AgentResult.tool_calls` is a list of dicts with keys `iteration`, `tool_name`, `arguments`, `tool_call_id`, plus `output` on success or `error` on failure. A tool that raises, or a name the agent does not have, does **not** raise out of `run()`: the error text goes back to the model as the tool message and lands in the `error` key. Assert on it:
+
+```python
+from fastaiagent import Agent
+from fastaiagent.testing import TestModel
+from fastaiagent.tool import tool
+
+@tool()
+def flaky(x: str) -> str:
+    """Always fails."""
+    raise ValueError("nope")
+
+def test_tool_failure_is_recorded():
+    llm = TestModel(response=["", "recovered"], tool_calls=[{"name": "flaky", "arguments": {"x": "a"}}])
+    result = Agent(name="f", llm=llm, tools=[flaky]).run("go")
+    assert result.output == "recovered"
+    assert "nope" in result.tool_calls[0]["error"]
+
+test_tool_failure_is_recorded()
+```
+
+## Overriding the LLM of an existing agent
+
+Do build agents through a factory that takes the model, so tests pass a fake and production passes the real client:
+
+```python
+from fastaiagent import Agent, LLMClient
+from fastaiagent.testing import TestModel
+
+def build_agent(llm=None) -> Agent:
+    return Agent(
+        name="support",
+        system_prompt="You are a support agent.",
+        llm=llm or LLMClient(provider="openai", model="gpt-4o-mini"),
+    )
+
+def test_support_agent():
+    agent = build_agent(llm=TestModel(response="Refund issued."))
+    assert agent.run("refund please").output == "Refund issued."
+
+test_support_agent()
+```
+
+If the module already builds a module-level agent, assign the attribute: `agent.llm = TestModel(response="...")` (`Agent.llm` is a plain attribute read on each run; verified). Restore it with `monkeypatch.setattr(agent, "llm", fake)` so the swap is undone after the test. Don't rebuild the agent with copied arguments; you will drop tools or guardrails.
+
+`Agent(llm=None)` silently creates a default `LLMClient()` (real provider), so always pass the fake explicitly.
+
+## Failure paths
+
+`FunctionModel` can raise to simulate a provider outage; the exception propagates out of `run()` unchanged:
+
+```python
+import pytest
+from fastaiagent import Agent
+from fastaiagent.testing import FunctionModel
+
+def test_provider_outage_propagates():
+    def down(messages):
+        raise RuntimeError("provider down")
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        Agent(name="x", llm=FunctionModel(down)).run("hi")
+
+test_provider_outage_propagates()
+```
+
+## Platform rules, offline (1.105.0)
+
+```signature
+fastaiagent.testing.plane_rules(rules)
+```
+
+A connected agent enforces guardrail rules its platform authored. `plane_rules` runs a block as if
+the platform had sent `rules`, so you can test how the app handles a block without a platform:
+
+```python
+import pytest
+from fastaiagent import Agent, GuardrailBlockedError
+from fastaiagent.testing import TestModel, plane_rules
+
+RULE = {
+    "name": "no-codenames",
+    "guardrail_type": "input",            # input | output | tool
+    "implementation_type": "regex",
+    "config": {"pattern": r"(?i)\bbluejay\b", "should_match": False},
+    "validation_mode": "blocking",
+    "on_error": "block",
+}
+
+def test_a_plane_block_reaches_the_caller():
+    agent = Agent(name="support", llm=TestModel("ok"))
+    with plane_rules([RULE]):
+        with pytest.raises(GuardrailBlockedError) as err:
+            agent.run("tell me about bluejay")
+    assert err.value.guardrail_name == "no-codenames"
+
+test_a_plane_block_reaches_the_caller()
+```
+
+- The rules use the platform's policy shape and go through the same cache and builder as a real
+  policy pull, so a rule gives the same verdict here as on a connected run.
+- A rule with `agent_ids` applies only to `Agent(agent_id=...)` with a matching id; without
+  `agent_ids` it applies to every agent.
+- A rule the edge cannot enforce from its configuration (a `code` rule) raises `ValueError`: a
+  connected agent would skip it, and a test that checked nothing would be worse.
+- Process-wide, like the real policy: do not nest it or use it across parallel threads. The
+  previous policy is restored on exit.
+- It tests your app's handling. It does not show that your platform has the rule or that a
+  connected agent receives it; keep one connected `e2e` test for that (`references/guardrails.md`).
+- Never write to `fastaiagent.client._connection` in a test. That is private state.
+
+## Async tests
+
+`agent.arun(...)` is the coroutine form of `agent.run(...)`. Either wrap it in `asyncio.run` inside a sync test (no extra dependency), or use `pytest-asyncio` (`pip install pytest-asyncio`, then `@pytest.mark.asyncio`). Don't call `agent.run()` from inside a running event loop in an async test: use `await agent.arun()`.
+
+```python
+import asyncio
+import pytest
+from fastaiagent import Agent
+from fastaiagent.testing import TestModel
+
+def test_arun_with_asyncio_run():
+    agent = Agent(name="a", llm=TestModel(response="async ok"))
+    assert asyncio.run(agent.arun("hi")).output == "async ok"
+
+@pytest.mark.asyncio
+async def test_arun_with_pytest_asyncio():
+    agent = Agent(name="a", llm=TestModel(response="async ok"))
+    result = await agent.arun("hi")
+    assert result.output == "async ok"
+
+test_arun_with_asyncio_run()
+asyncio.run(test_arun_with_pytest_asyncio())
+```
+
+Streaming: `agent.astream(input)` yields stream events (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usage`, `StreamDone`, importable from `fastaiagent.llm.stream`). Both fakes support it.
+
+## Keep tests from writing to the project database
+
+Every run writes traces to `./.fastaiagent/local.db` (path set by `FASTAIAGENT_LOCAL_DB`; the `.fastaiagent/` directory is created even when the DB is moved). Ignore `.fastaiagent/` in `.gitignore`. To isolate plain unit tests, add this to `conftest.py`:
+
+```python
+import pytest
+
+@pytest.fixture(autouse=True)
+def isolated_local_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+```
+
+Don't use that fixture for eval-gated suites (`evals.md`): the aggregated eval run is persisted at session end, after the per-test patch is undone, so it lands in the default DB and baselines are never found. For those, export `FASTAIAGENT_LOCAL_DB` in the shell or CI step instead.
+
+## Real-model tests
+
+Do keep real-provider tests out of the default run. Mark them and skip without a key; never hard-code a key and never read one from a file in the repo:
+
+```python
+# needs: OPENAI_API_KEY
+import os
+import pytest
+
+needs_openai = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
+)
+
+@pytest.mark.e2e
+@needs_openai
+def test_real_model_answers():
+    from fastaiagent import Agent, LLMClient
+
+    agent = Agent(name="real", llm=LLMClient(provider="openai", model="gpt-4o-mini"))
+    assert agent.run("Reply with the single word: pong").output.strip()
+```
+
+Register the marker (`markers = ["e2e: needs a real model key"]` under `[tool.pytest.ini_options]`) so `pytest -m "not e2e"` is clean. A skipped test is not a check: report skips explicitly instead of counting them as passes.
+
+## What not to do
+
+- Don't mock `LLMClient`, `httpx` or `openai` with `unittest.mock`. The fakes exercise the real loop; a mock does not and produces no trace.
+- Don't put real keys in tests, fixtures or examples. Offline tests need none; `TestModel` ignores `api_key`.
+- Don't assert on a real model's wording. Assert on tool calls, arguments, the messages sent (`.calls`), guardrail outcomes and structure. Score wording with evals (`evals.md`).
+- Don't import `MockLLMClient`, `isolated_local_db` or `CaptureServer`: they are the SDK repo's own test scaffolding, not part of the installed package.
+- Don't treat a green offline suite as proof the prompt works with a real model: it validates your wiring only.
+- `pytest` is not a dependency of `fastaiagent`; install it yourself. The pytest plugin (`evals.md`) registers automatically once both are installed and does nothing for tests that don't use it.
+
+---
+
+# Teams: Supervisor, Swarm and Chain
+
+Read this when one agent is not enough: a coordinator that delegates (`Supervisor`), peers that hand off (`Swarm`), or a fixed graph you draw (`Chain`).
+
+## Which to choose
+
+Start with ONE `Agent` and tools. Reach for a team only when one agent's prompt or tool set cannot hold the job.
+
+| Need | Use | Who decides the path |
+|---|---|---|
+| One goal, open-ended steps | single `Agent` | the model's tool loop |
+| A coordinator splits work, calls several specialists, writes ONE combined answer | `Supervisor` (`routing="tools"`, default) | the lead model, at runtime |
+| Pick exactly one specialist for a request (triage, support queue), return its reply unchanged | `Supervisor(routing="decisions")` | one Decisions API call |
+| Specialists decide for themselves who goes next; loops like writer <-> critic | `Swarm` | the active agent, via `handoff_to_<peer>` |
+| The shape is known: routing, retry loops, approval gates, durable resume, one trace | `Chain` | you, with edges and conditions |
+
+Do NOT use a Supervisor to do a Chain's job. A fixed pipeline run through an LLM coordinator costs extra turns and is not reproducible. Do NOT use a Chain when the path really emerges at runtime.
+
+## Supervisor and Worker
+
+```signature
+fastaiagent.Worker(agent, role=, description=)
+fastaiagent.Supervisor(name, llm=, workers=, system_prompt=, max_delegation_rounds=, checkpointer=, validate_outputs=, validation_prompt=, max_validation_retries_per_worker=, validation_mode=, validation_llm=, validation_threshold=, validation_criteria=, routing=, router_llm=, fallback_worker=, routing_min_confidence=, routing_questions=, routing_instructions=, guardrails=, middleware=, timeout_seconds=, memory=)
+fastaiagent.Supervisor.run(input, context=, execution_id=, **kwargs)
+fastaiagent.Supervisor.arun(input, context=, execution_id=, **kwargs)
+fastaiagent.Supervisor.resume(execution_id, resume_value=, context=, **kwargs)
+```
+
+- `role` defaults to `agent.name`; `description` defaults to the first 200 chars of a string system prompt. The lead sees each worker as a tool named `delegate_to_<role>(task)`. Do write a real `description` per worker — it is how the lead (or the router) chooses.
+- `llm` defaults to `LLMClient()` when omitted. `max_delegation_rounds` defaults to 3.
+- The lead only passes a worker the `task` string it writes. Do give a worker its own `memory=` if it needs history; the lead's `memory=` does not reach it.
+- Offline test (the lead is scripted; the worker is a `TestModel`):
+
+```python
+from fastaiagent import Agent, Supervisor, Worker
+from fastaiagent.testing import FunctionModel, TestModel
+
+researcher = Agent(name="researcher", system_prompt="Find facts.",
+                   llm=TestModel(response="Fact: the sky is blue."))
+turn = {"n": 0}
+
+def lead(messages):
+    turn["n"] += 1
+    if turn["n"] == 1:
+        return "", [{"name": "delegate_to_researcher", "arguments": {"task": "sky colour"}}]
+    return "Summary: the sky is blue."
+
+team = Supervisor(
+    name="lead",
+    llm=FunctionModel(lead),
+    workers=[Worker(agent=researcher, role="researcher", description="Finds facts")],
+)
+result = team.run("What colour is the sky?")
+assert result.output == "Summary: the sky is blue."
+assert result.tool_calls[0]["tool_name"] == "delegate_to_researcher"
+```
+
+### Optional behaviours
+
+- `validate_outputs=True`: the lead reviews each worker output; on rejection the worker re-runs with feedback, capped by `max_validation_retries_per_worker` (default 1). Failure of the review itself is FAIL-OPEN (treated as approval). After the cap the last output is used and a `supervisor.validate` / `warned` guardrail event is written. `validation_mode="decisions"` swaps the chat review for one Decisions API predicate (`validation_criteria=`, `validation_threshold=` in 0..1, `validation_llm=`).
+- `guardrails=` / `middleware=` are the supervisor's OWN (its input, its `delegate_to_*` calls, its answer); each worker keeps its own. Since 1.90.0 / 1.91.0.
+- `timeout_seconds=` bounds the whole run, workers included; raises `AgentTimeoutError`.
+- `memory=` (since 1.99.0): the lead keeps a conversation, one turn per run. Refused (`ValueError`) with `routing="decisions"`.
+- `context=RunContext(...)` flows to every worker and its tools.
+
+## Supervisor routing="decisions" and decide()
+
+`routing="decisions"` replaces the lead chat model with one call to OpenAI's Decisions API. It picks exactly ONE worker and returns that worker's reply unchanged (no synthesis turn). Requires an OpenAI-served decisions endpoint at run time (default router model `gpt-6-luna`; a key is needed: `# needs: OPENAI_API_KEY`) — offline, give `router_llm=TestModel(decisions=...)`. Do not replace the default router model with a chat model such as `gpt-4o-mini`: the Decisions API does not serve it (404), and only a real run shows that. The default Supervisor routing (`routing="tools"`, the lead model delegates) needs no special endpoint; tell the user which one you chose and why.
+
+- Constructor refuses (`ValueError`): fewer than 2 workers, duplicate roles, `fallback_worker` not one of the roles, a `routing_questions` key named `"worker"`, `routing_min_confidence` outside 0..1, or `memory=`.
+- A refusal, or confidence below `routing_min_confidence`, goes to `fallback_worker`. The router never guesses a specialist. `llm=` is not used for routing.
+- `routing_questions={"urgent": Predicate(...)}` ride in the same call; the worker gets their answers as a short note.
+- `result.route` is a `SupervisorRoute`: `worker`, `chosen`, `confidence`, `fallback`, `answers`, `latency_ms`, `cost_usd`, `reviews`.
+
+```python
+from fastaiagent import Agent, Supervisor, Worker
+from fastaiagent.testing import TestModel
+
+def worker(role, reply):
+    return Worker(agent=Agent(name=f"w-{role}", llm=TestModel(response=reply)),
+                  role=role, description=f"Handles {role} requests.")
+
+router = TestModel(decisions={"answers": [
+    {"type": "choice", "name": "worker", "choice": "billing", "confidence": 0.9}]})
+desk = Supervisor(
+    name="desk",
+    workers=[worker("billing", "Refund issued."), worker("other", "Let me help.")],
+    routing="decisions",
+    router_llm=router,
+    fallback_worker="other",
+    routing_min_confidence=0.6,
+)
+result = desk.run("Refund my order")
+assert result.output == "Refund issued."
+assert (result.route.worker, result.route.fallback) == ("billing", False)
+```
+
+`decide()` is the underlying primitive on any `LLMClient`; use it directly for a one-off classification instead of a chat turn. Questions are `Predicate` (probability), `Choice` (one of N options, with confidence) and `Score` (levels) from `fastaiagent.llm`. Any answer can be a refusal; check before using it.
+
+```signature
+fastaiagent.LLMClient.decide(input, questions, safety_identifier=)
+fastaiagent.tool.decision_tool(questions, llm=, name=, description=)
+```
+
+Chains have the same idea as a `NodeType.condition` node with `decision=Choice(...)` (below).
+
+## Swarm
+
+```signature
+fastaiagent.Swarm(name, agents, entrypoint, handoffs=, max_handoffs=, checkpointer=, middleware=, timeout_seconds=)
+fastaiagent.Swarm.run(input, context=, execution_id=)
+fastaiagent.Swarm.cancel(execution_id)
+fastaiagent.Swarm.resume(execution_id, resume_value=, context=, **kwargs)
+```
+
+- `agents` are plain `Agent`s with unique names; `entrypoint` names the first. Each hop gets one `handoff_to_<peer>` tool per allowed peer, added to the agent's own tools.
+- `handoffs={"a": ["b"], "b": []}` is an allowlist. Omit it for a full mesh. An empty list means that agent terminates the run. `max_handoffs` defaults to 8.
+- The run ends when an agent answers with no handoff. The handoff tool accepts `reason` and an optional `context` dict that merges into the shared blackboard and is shown to later agents; tool results from earlier agents are also listed in each briefing (since 1.99.0).
+- Errors: `SwarmError` (a subclass of `AgentError`) for a missing entrypoint, duplicate names, unknown peers, a disallowed handoff, or exceeding `max_handoffs`. Do tune `max_handoffs` to the topology; a writer <-> critic loop with no exit hits it.
+- `timeout_seconds` bounds the whole run and raises `AgentTimeoutError`.
+- A member's output guardrails are not run on its handoff turn (that turn's `stop_reason` is `"handoff"`, since 1.102.0): the reply is a control marker, and an allow-style rule such as `allowed_topics` used to block the swarm on its first handoff. They still judge the member that answers.
+
+```python
+from fastaiagent import Agent, Swarm
+from fastaiagent.testing import FunctionModel
+
+def triage_llm(messages):
+    return "", [{"name": "handoff_to_billing", "arguments": {"reason": "invoice question"}}]
+
+triage = Agent(name="triage", system_prompt="Route.", llm=FunctionModel(triage_llm))
+billing = Agent(name="billing", system_prompt="Billing.", llm=FunctionModel(lambda m: "Your invoice is $10."))
+swarm = Swarm(name="desk", agents=[triage, billing], entrypoint="triage",
+              handoffs={"triage": ["billing"], "billing": []}, max_handoffs=3)
+result = swarm.run("Where is my invoice?")
+assert result.output == "Your invoice is $10."
+assert result.tool_calls[0]["agent"] == "triage"
+```
+
+## What a team run returns
+
+`Supervisor.run/arun/resume` and `Swarm.run/arun/resume` return an `AgentResult` for the WHOLE team:
+
+- `output`: the lead's final answer (Supervisor), the last agent's answer (Swarm), the worker's reply (`routing="decisions"`).
+- `tool_calls`: every call, each tagged with the `agent` that made it. A Supervisor's list also holds the workers' calls (`worker` key, since 1.99.0).
+- `tokens_used`, `cost`, `cost_known`: summed over the whole team. `cost_known` is `False` if any model had no rate.
+- `trace_id`: one `supervisor.<name>` / `swarm.<name>` root span. `guardrails`: every firing, workers' included. `status`: `"paused"` after an `interrupt()`, `"cancelled"` after `cancel()`.
+- Stream with `astream(input)` (events incl. `HandoffEvent`). `Supervisor.stream()` / `Swarm.stream()` are sync and return an `AgentResult` (no `tool_calls` on a Supervisor's).
+- A `Supervisor` has no `cancel()`; call `Agent.cancel(execution_id)` or `Swarm.cancel(...)` — the registry is shared.
+- Do pass the same `RunContext` to `run(..., context=ctx)`; it reaches every member and its tools.
+
+## Chain
+
+A `Chain` is a directed graph you build with `add_node` and `connect`; the executor runs it with shared state, checkpoints, and one trace.
+
+```signature
+fastaiagent.Chain(name, state_schema=, checkpoint_enabled=, checkpointer=, strict_routing=, middleware=)
+fastaiagent.Chain.add_node(id, agent=, tool=, type=, name=, node=, output_key=, input_schema=, output_schema=, input=, **config)
+fastaiagent.Chain.connect(source, target, condition=, max_iterations=, exit_condition=, label=)
+fastaiagent.Chain.validate()
+fastaiagent.Chain.execute(initial_state=, trace=, context=, **kwargs)
+fastaiagent.Chain.aexecute(initial_state=, trace=, execution_id=, hitl_handler=, context=, **kwargs)
+fastaiagent.Chain.resume(execution_id, modified_state=, resume_value=, context=)
+fastaiagent.Chain.cancel(execution_id)
+```
+
+- Node type is inferred: `agent=` -> agent node, `tool=` or `node=` -> tool node. Others need `type=NodeType.<condition|transformer|parallel|hitl|start|end>` (import `NodeType` from `fastaiagent.chain`).
+- **What an agent node is given.** By default, the chain's input (the state at the start of the pass, as text), NOT the previous node's output: in `draft -> review` with no `input=`, `review` is handed the original message, never the draft. When an agent should work on an earlier node's output, pass `input=` (1.105.0), a template: `chain.add_node("review", agent=reviewer, input="Review this draft:\n{{node_results.draft.output}}")`. It can read `{{node_results.<node>.output}}`, `{{state.<key>}}` and `{{input.<key>}}`, and is re-rendered on every loop pass. Use it only on the nodes that need it; an agent that answers the user's request keeps the default. An input that renders empty raises `ChainError` before the agent is called; `validate()` reports a misspelled node name. Tool nodes read earlier results with `input_mapping=`, transformers with `template=`; `input=` is for agent nodes only.
+- A node with nothing to run FAILS the run (`ChainError`) and `validate()` reports it. Do call `chain.validate()` (returns a list of error strings; `[]` is valid) before running.
+- `Chain` checkpoints by default (`checkpoint_enabled=True`) into a local SQLite store. Do pass `checkpoint_enabled=False` in unit tests so nothing is written.
+- `ChainResult`: `output`, `final_state`, `node_results`, `execution_id`, `status` (`completed|paused|rejected|cancelled`), `pending_interrupt`, `trace_id`. For an agent node, `node_results[id]` and `output` are dicts shaped `{"output": ..., "tool_calls": [...]}` — read `["output"]` for the text (the docs print the dict).
+- `Chain.resume` is `async` only (`aresume` is an alias). Don't call it without `await` / `asyncio.run`.
+- Edge routing: all-unconditional edges fan out and all fire. If any edge has a `condition`, the first match in declaration order wins and one unconditional sibling is the default. Conditions are `{{...}}` templates over `input`, `state`, `node_results`, with `== != > < >= <= contains startswith`; a bare word is literal text, not a state lookup. A dead branch is skipped silently unless `strict_routing=True` (then `ChainRoutingError`).
+- A tool node's return is wrapped `{"output": ..., "error": None}` and overwrites `state.output`; keep values you must thread on top-level state. A tool node that reports an error fails the run.
+
+```python
+from fastaiagent import Agent, Chain, node
+from fastaiagent.testing import TestModel
+
+classifier = Agent(name="classifier", system_prompt="Classify.", llm=TestModel(response="billing"))
+billing = Agent(name="billing", system_prompt="Billing.", llm=TestModel(response="refund sent"))
+general = Agent(name="general", system_prompt="General.", llm=TestModel(response="hello"))
+
+chain = Chain("router", checkpoint_enabled=False)
+chain.add_node("classify", agent=classifier)
+chain.add_node("billing", agent=billing)
+chain.add_node("general", agent=general)
+chain.connect("classify", "billing", condition="{{node_results.classify.output}} == billing")
+chain.connect("classify", "general")  # the default edge
+assert chain.validate() == []
+result = chain.execute({"message": "Refund please"})
+assert result.status == "completed"
+assert "general" not in result.node_results
+assert result.node_results["billing"]["output"] == "refund sent"
+
+@node(output_key="shouted")
+def shout(text: str) -> str:
+    return text.upper()
+
+typed = Chain("typed", checkpoint_enabled=False)
+typed.add_node("shout", node=shout, input_mapping={"text": "{{state.text}}"})
+assert typed.execute({"text": "hi"}).final_state["shouted"] == "HI"
+```
+
+### Typed nodes, cycles, decision nodes, approval gates (brief)
+
+- `@node(output_key=, output_schema=, validate_input=)` turns a function into a tool node; its type hints become `input_schema`. Templates render as STRINGS, so an `int` parameter fed from `{{state.n}}` fails input validation — type it `str` and convert inside.
+- Loop (retry until good, at most N times): a node drafts, a node checks, and the edge that goes
+  back is marked. The check can be a tool node (a rule in code) or an agent given
+  `input="{{node_results.draft.output}}"` (a model's judgement).
+  `chain.connect("check", "draft", max_iterations=3, exit_condition="{{node_results.check.output}} startswith PASS")`.
+  The loop body runs at most `max_iterations` times (10 when only `exit_condition` is given), then
+  raises `ChainCycleError` (`fastaiagent._internal.errors`). On a second pass the drafting agent's
+  input holds the check's last output, so have the check return what to fix and tell the agent in
+  its system prompt to follow it. A node after the loop (`chain.connect("check", "publish")`) runs
+  once, after the last pass. Chain middleware applies on every pass. Working example:
+  `examples/02_chain_with_cycles.py` in the SDK repository. Do NOT write your own attempt counter or cap middleware: the edge is the cap (it
+  was not enforced before 1.105.0, when a loop that never exited ran about 980 passes).
+- Exit and routing conditions are templates: `{{state.quality}} >= 0.8`, never the bare
+  `quality >= 0.8`, which compares the literal word and is never true. An edge that goes back
+  with neither `max_iterations` nor `exit_condition` is not a loop and is never followed;
+  `validate()` reports it.
+- Decision node (needs a Decisions endpoint at run time): `chain.add_node("triage", type=NodeType.condition, decision=Choice(instructions=..., options={...}))` with `from fastaiagent.llm import Choice`, then one `connect(..., label=<option>)` per option plus an unlabelled default edge (taken on refusal or low confidence). Its `llm=` takes shareable kwargs only; an `api_key` raises at `add_node`.
+- Approval: inside any node call `interrupt(reason, context)` (`from fastaiagent import interrupt, Resume`); `execute` returns `status="paused"`, and later `await chain.resume(execution_id, resume_value=Resume(approved=True))`. Pass your own `execution_id=` to `aexecute` so you can find it. `NodeType.hitl` with `hitl_handler=` is the blocking, in-process variant. A rejected gate gives `status="rejected"` and stops the chain.
+- Nodes may re-run on resume; make side-effecting nodes idempotent (`@idempotent`, see `docs/chains/idempotency.md` in the repo).
+
+## Testing teams offline
+
+- Use `TestModel(response=..., tool_calls=[...], decisions=...)` for a fixed reply and `FunctionModel(fn, decide_fn=)` when the reply depends on call order or messages (count calls in a closure, as above). Both are `LLMClient`s: put them on the lead, each worker, each swarm agent, and `router_llm=`.
+- A scripted lead calls `delegate_to_<role>` with argument `task`; a scripted swarm agent calls `handoff_to_<peer>` with argument `reason`.
+- Assert on `result.output`, `result.tool_calls` (look at `agent` / `worker`), `result.route`, `result.tokens_used` and `ChainResult.node_results`. Don't assert on exact free text from a real model.
+- Running a team still emits traces to a local `.fastaiagent/` directory under the current working directory. Run tests from a temp dir if that matters.
+- Tests that need a real model belong in `tests/e2e/` marked `e2e`; they need a key (`# needs: OPENAI_API_KEY`).
+
+```signature
+fastaiagent.testing.TestModel(response=, tool_calls=, usage=, model=, delay_ms=, decisions=)
+fastaiagent.testing.FunctionModel(fn, model=, delay_ms=, decide_fn=)
+```
+
+See `guardrails.md` for guardrails on a team member or on the supervisor itself.
+
+---
+
+# Agents, LLMClient and run control
+
+Read this before writing or changing code that builds an `Agent`, picks a model, calls `run`/`arun`/`stream`/`astream`, reads an `AgentResult`, asks for structured output, or adds middleware, run limits, memory or multimodal input. Tools are in `tools.md`.
+
+## Agent: the real constructor
+
+```signature
+fastaiagent.Agent(name, system_prompt=, llm=, tools=, guardrails=, memory=, config=, output_type=, middleware=, checkpointer=, agent_path_label=, agent_id=, prompt_slug=)
+```
+
+- `name` is the only required parameter. There is no `model=`, `instructions=`, `max_iterations=` or `temperature=` on `Agent`. Put the model on `llm=LLMClient(...)` and the loop knobs on `config=AgentConfig(...)`. Passing an unknown keyword raises `TypeError`.
+- `system_prompt` takes a `str`, a registry `Prompt`, or a callable `(RunContext | None) -> str` (dynamic instructions, below).
+- `llm` must be an `LLMClient` (or `TestModel`/`FunctionModel`). A raw `openai.OpenAI` client raises `TypeError`; wrap it with `LLMClient(openai_client=...)`. Omitting `llm` silently builds `LLMClient()`, which is OpenAI `gpt-4o-mini` and needs `OPENAI_API_KEY`. That default is old: pick a current model yourself (for example `gpt-5-mini`) unless the user named one, and do not change a model id the user gave you or one that already runs (`SKILL.md` rule 10).
+- `tools=` takes `Tool` objects (`FunctionTool`, `RESTTool`, `MCPTool`...), not bare functions. A plain `def` in the list fails; wrap it with `@tool` or `FunctionTool` (see `tools.md`).
+- `checkpointer=` (for example `SQLiteCheckpointer`) enables `resume`/`fork` and pausing via `interrupt()`.
+
+## Run it
+
+```signature
+fastaiagent.Agent.run(input, output_type=, context=, trace=, execution_id=, messages=, metadata=, **kwargs)
+fastaiagent.Agent.arun(input, output_type=, context=, trace=, execution_id=, messages=, wait_for_approval=, metadata=, **kwargs)
+fastaiagent.Agent.stream(input, context=, trace=, **kwargs)
+fastaiagent.Agent.astream(input, context=, trace=, execution_id=, messages=, **kwargs)
+```
+
+- `run` is sync and returns `AgentResult`. `arun` is its async twin. Use `arun` inside async code; `run` also works inside a running loop (it offloads to a thread) but blocks it.
+- `stream` is sync and does NOT yield: it drains the stream and returns one `AgentResult`. Only `astream` yields events (an async generator).
+- `stream` is typed `str` only. `run`/`arun`/`astream` also take an `Image`, `PDF`, or a list mixing text and those.
+- `**kwargs` go to the model call (for example `temperature=0`, `response_format=...`). They are not agent options.
+- `messages=` prepends prior turns (a `list[Message]`); `result.messages` is shaped to be passed straight back in. Do not also rebuild history by hand.
+- `execution_id=` names the run for `resume`/`cancel`; a UUID when omitted.
+- `wait_for_approval=True` raises `ValueError` (removed in 1.76.0). `False` is accepted and does nothing. Paused runs come back as `status="paused"`; the application resumes them with `agent.resume(execution_id, resume_value=Resume(approved=...))`.
+- `trace=False` skips the root span. Tracing is on by default and writes local files (a `.fastaiagent/` directory under the working directory was observed, even offline).
+
+```signature
+fastaiagent.AgentResult(output=, parsed=, tool_calls=, messages=, tokens_used=, cost=, cost_known=, latency_ms=, trace_id=, execution_id=, status=, pending_interrupt=, guardrails=, stop_reason=)
+```
+
+- `output` is the final text (`str`, `""` if none). `parsed` is the `output_type` instance, or `None`.
+- `status` is `"completed"`, `"paused"` or `"cancelled"`. A run ended cooperatively by middleware is `"completed"` with `stop_reason` set and `output` = the stop message.
+- `cost == 0.0` alone does not mean free: check `cost_known`.
+- `guardrails` lists every guardrail that ran. Non-blocking outcomes (warn, mask) are visible only here. A blocking failure raises `GuardrailBlockedError` instead of returning.
+
+### Minimal and realistic (offline)
+
+```python
+from fastaiagent import Agent
+from fastaiagent.testing import TestModel
+
+agent = Agent(name="hello", system_prompt="Be brief.", llm=TestModel(response="hi"))
+result = agent.run("anything")
+assert result.output == "hi" and result.status == "completed"
+```
+
+```python
+import asyncio
+
+from fastaiagent import Agent, AgentConfig, TextDelta
+from fastaiagent.testing import FunctionModel
+from fastaiagent.tool import tool
+
+
+@tool(name="get_weather", replay_class="read_only")
+def get_weather(city: str) -> str:
+    """Get the weather for a city."""
+    return f"Sunny in {city}"
+
+
+def responder(messages):
+    # Turn 1: ask for the tool. Turn 2 (a tool message is present): answer.
+    if any(m.role.value == "tool" for m in messages):
+        return "It is sunny in Paris."
+    return "", [{"name": "get_weather", "arguments": {"city": "Paris"}}]
+
+
+agent = Agent(
+    name="weather",
+    system_prompt="Use tools to answer.",
+    llm=FunctionModel(responder),
+    tools=[get_weather],
+    config=AgentConfig(max_iterations=5),
+)
+result = agent.run("Weather in Paris?")
+assert result.output == "It is sunny in Paris."
+assert result.tool_calls[0]["tool_name"] == "get_weather"
+
+
+async def main() -> str:
+    text = ""
+    async for event in agent.astream("Weather in Paris?"):
+        if isinstance(event, TextDelta):
+            text += event.text
+    return text
+
+
+assert asyncio.run(main()) == "It is sunny in Paris."
+```
+
+## Offline test models
+
+```signature
+fastaiagent.testing.TestModel(response=, tool_calls=, usage=, model=, delay_ms=, decisions=)
+fastaiagent.testing.FunctionModel(fn, model=, delay_ms=, decide_fn=)
+```
+
+- `TestModel(response="x")` always answers `"x"`. A list is round-robin and the last entry repeats. `.calls` records every request (`messages`, `tools`, `kwargs`).
+- Do not use `TestModel(response=..., tool_calls=[...])` for a tool round-trip with a single response: every turn repeats the same tool call and the run ends in `MaxIterationsError`. Use `FunctionModel`, or a list: `TestModel(response=["", "done"], tool_calls=[...])` attaches the calls to the first turn only.
+- `FunctionModel` calls `fn(messages)` each turn. It returns `str`, `(text, [tool_call_dict])` with `{"name", "arguments"}`, or an `LLMResponse`. Sync or async. Switch on whether a `tool` message is already present; otherwise it asks for the tool forever.
+- Both report `usage=(0, 0)` tokens by default. Pass `usage=(prompt, completion)` to `TestModel` to exercise token caps.
+
+## LLMClient
+
+```signature
+fastaiagent.LLMClient(provider=, model=, api_key=, base_url=, temperature=, max_tokens=, max_retries=, fallbacks=, reasoning=, cache=, api=, openai_client=, extra_body=, extra_headers=, **kwargs)
+```
+
+- `provider` defaults to `"openai"`. Built in: `openai`, `anthropic`, `ollama`, `azure`, `bedrock`, `custom`. Presets (key read from the provider's own env var): `gemini`, `groq`, `openrouter`, `deepseek`, `together`, `fireworks`, `perplexity`, `mistral`, `lmstudio`, `vllm`, `sambanova`, `cerebras`.
+- Always pass `model=` for every provider except `openai` and the presets: the built-ins `anthropic`, `ollama`, `azure`, `bedrock`, `custom` fall back to the OpenAI id `gpt-4o-mini`, which they cannot serve.
+- Never hard-code `api_key=`. Leave it unset and export the provider's env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`...). A missing key raises `LLMProviderError` at the first call, not at construction.
+- `max_retries=0` is the default: transient provider errors are not retried unless you set it. `fallbacks=[LLMClient(...)]` are tried in order after a failure.
+- `api="responses"` selects OpenAI's Responses API and is valid only for `openai`/`azure`/`custom`; other providers raise `ValueError`.
+- `reasoning` accepts `none|minimal|low|medium|high|xhigh|max`; `cache=True` or `"1h"` enables prompt caching (Anthropic, Bedrock).
+- Call it directly with `complete`/`acomplete`/`stream`/`astream` taking `list[Message]` (`UserMessage`, `SystemMessage`, `AssistantMessage` from `fastaiagent.llm`).
+
+## AgentConfig: the loop and the run limits
+
+```signature
+fastaiagent.AgentConfig(max_iterations=, tool_choice=, temperature=, max_tokens=, parallel_tools=, max_parallel_tools=, output_retries=, guardrail_retries=, strict_output=, timeout_seconds=, max_total_tokens=, max_cost_usd=, output_mode=)
+```
+
+- All fields are keyword-only. Range checks raise a pydantic `ValidationError`: `max_iterations` 1-100 (default 10), `output_retries` 0-5 (default 2), `guardrail_retries` 0-5 (default 1), `max_parallel_tools` 1-64 (default 4).
+- Exceeding `max_iterations` raises `fastaiagent._internal.errors.MaxIterationsError` (not exported at the top level). Raise the limit or fix the loop; do not catch-and-ignore.
+- `tool_choice` is `auto|required|none`. `required` forces only the first turn (so the loop can still answer); `none` applies to every turn. Any other value raises.
+- `temperature`/`max_tokens` here go on every model call of the run and override the client's own values.
+- `parallel_tools=True` runs one turn's tool calls concurrently, but falls back to sequential when a checkpointer, middleware or managed governance is active. Do not rely on it alongside middleware.
+- Run limits (all default `None` = unbounded), live on `AgentConfig`, not on `Agent` or middleware:
+  - `timeout_seconds`: wall clock. On expiry `run` raises `AgentTimeoutError` (top-level export).
+  - `max_total_tokens`: checked before every model call. Over the cap the run ends cooperatively: `result.stop_reason == "max_total_tokens"`, no exception. It reads the model's reported usage, so a model that reports none never trips it.
+  - `max_cost_usd`: same shape, `stop_reason == "max_cost_usd"`. If the model cannot be priced it raises `RunLimitError` instead of running unbudgeted. Do not set it on a custom/unknown model.
+  - `Agent.cancel(execution_id) -> bool` stops a run in flight; the result has `status="cancelled"`.
+
+## Structured output
+
+- Pass `output_type=` (any Pydantic-compatible type: `BaseModel`, `list[Model]`, primitives, unions) on `Agent`, or per call: `agent.run(text, output_type=Model)`, which types the result as `AgentResult[Model]`.
+- Read `result.parsed`, not `json.loads(result.output)`. On a parse or validation failure the agent re-asks up to `output_retries` times; if it still fails, `parsed` is `None` and `output` holds the raw text. It does not raise. Always check `result.parsed is not None`. Prefer this to hand-written `response_format=`, which returns raw JSON with no parsing or retry.
+- `AgentConfig(output_mode=...)` is `auto` (default), `native`, `tool` or `prompt`. Use `"tool"` for an agent that calls tools and must still return a typed answer; it adds a reserved tool named `final_result`, so no tool of yours may use that name (`ValueError`).
+- `astream` also yields `PartialOutput(data=...)` while the answer forms; `data` is unvalidated.
+
+```python
+import json
+
+from pydantic import BaseModel
+
+from fastaiagent import Agent
+from fastaiagent.testing import TestModel
+
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+
+llm = TestModel(response=json.dumps({"name": "Alice", "age": 30}))
+agent = Agent(name="extractor", system_prompt="Extract the person.", llm=llm, output_type=Person)
+result = agent.run("Alice is 30.")
+assert result.parsed is not None and result.parsed.age == 30
+
+bad = Agent(name="x", llm=TestModel(response="not json")).run("Alice", output_type=Person)
+assert bad.parsed is None and bad.output == "not json"  # no exception
+```
+
+## Dynamic instructions
+
+- `system_prompt` may be a callable taking the run's `RunContext` (or `None` when the caller passed no `context=`). It is called on every run. Always handle `None`: `lambda ctx: ... if ctx else "default"`.
+- A callable prompt cannot be serialized: `agent.to_dict()` (and therefore pushing the agent) raises `ValueError`. Use a static string or `prompt_slug` for agents that are pushed.
+- `RunContext(state=obj)` must be constructed explicitly; raw objects are not auto-wrapped. `context=` also reaches tools that declare a `RunContext` parameter (see `tools.md`).
+
+```python
+from dataclasses import dataclass
+
+from fastaiagent import Agent, RunContext
+from fastaiagent.testing import TestModel
+
+
+@dataclass
+class Session:
+    user: str
+
+
+def prompt(ctx):
+    return f"You help {ctx.state.user}." if ctx else "You are a general assistant."
+
+
+llm = TestModel(response="ok")
+agent = Agent(name="dyn", system_prompt=prompt, llm=llm)
+agent.run("hi", context=RunContext(state=Session(user="Alice")))
+agent.run("hi")
+assert llm.calls[0]["messages"][0].content == "You help Alice."
+assert llm.calls[1]["messages"][0].content == "You are a general assistant."
+```
+
+## AgentMiddleware: the one extension model
+
+Extend an agent by subclassing `AgentMiddleware` and passing `Agent(middleware=[...])`. Do not monkeypatch `Agent`, wrap `run`, or invent callback parameters. Every hook is optional, async, and takes a `MiddlewareContext` first.
+
+```signature
+fastaiagent.AgentMiddleware.before_run(ctx, input)
+fastaiagent.AgentMiddleware.before_model(ctx, messages)
+fastaiagent.AgentMiddleware.wrap_model(ctx, messages, call_next)
+fastaiagent.AgentMiddleware.after_model(ctx, response)
+fastaiagent.AgentMiddleware.wrap_tool(ctx, tool, args, call_next)
+fastaiagent.AgentMiddleware.after_run(ctx, result)
+fastaiagent.AgentMiddleware.on_error(ctx, error)
+fastaiagent.AgentMiddleware.on_stream_event(ctx, event)
+```
+
+- Return what the hook receives (or a replacement): `before_model` returns the message list, `after_model` the response, `after_run` the `AgentResult`. Forgetting `return` breaks the run.
+- `wrap_model`/`wrap_tool` are onions and must `await call_next(...)` to proceed (`call_next(messages)` / `call_next(tool, args)`). The first middleware in the list is outermost. `before_*` run in list order; `after_*`, `on_error` and `on_stream_event` run in reverse.
+- To stop a run cleanly raise `StopAgent(message, reason="...")`: the result is a normal return with `output=message` and `stop_reason=reason`. Any other exception from a hook fails the run; `on_error` observes it but cannot swallow it.
+- Share data within a run through `ctx.scratch` (not saved). Anything that must survive a pause/resume goes in `ctx.state` (a JSON-safe dict, checkpointed); non-JSON state raises `TypeError` at checkpoint time.
+- Class attributes `tools` (extra tools) and `instructions` (extra system text) let middleware bring both; a name clash with an agent tool raises `ValueError` at construction.
+- Built in: `ToolBudget(max_calls=, message=)` (caps tool calls; ends the run with `stop_reason="tool_budget"`), `TrimLongMessages(keep_last=)`, `RedactPII(patterns=, placeholder=, entities=)`, `Reflect(llm=, facts=, criteria=, max_revisions=)`. `Reflect` fails open: a reviewer error keeps the draft and only warns.
+
+```python
+from fastaiagent import Agent, AgentMiddleware, MiddlewareContext, ToolBudget
+from fastaiagent.testing import FunctionModel
+from fastaiagent.tool import tool
+
+
+@tool(name="ping", replay_class="read_only")
+def ping(x: str) -> str:
+    """Echo x."""
+    return x
+
+
+class CountTurns(AgentMiddleware):
+    name = "count_turns"
+
+    async def before_model(self, ctx: MiddlewareContext, messages):
+        ctx.scratch["turns"] = ctx.scratch.get("turns", 0) + 1
+        return messages
+
+    async def after_run(self, ctx: MiddlewareContext, result):
+        result.output = f"{result.output} (turns={ctx.scratch['turns']})"
+        return result
+
+
+def always_call_tool(messages):
+    return "", [{"name": "ping", "arguments": {"x": "a"}}]
+
+
+agent = Agent(
+    name="mw",
+    llm=FunctionModel(always_call_tool),
+    tools=[ping],
+    middleware=[CountTurns(), ToolBudget(max_calls=2, message="Budget used.")],
+)
+result = agent.run("go")
+assert result.stop_reason == "tool_budget"
+```
+
+## Memory (brief)
+
+`Agent(memory=...)` takes any object with `get_context(query, max_messages)` and `add(message)`. Use `Memory(...)` (recommended; keyword-only: `location`, `user_id`, `agent_id`, `window`, `learn`, `summarize`, `recall`, `semantic`, `embedder`, `max_users`...) for a durable per-user store plus a conversation window; `AgentMemory(max_messages=)` is a plain sliding window; `ComposableMemory` mixes blocks. `Memory()` defaults to a local SQLite store. For many users, pass `user_id=lambda ctx: ...` and always call with `context=RunContext(...)`: a run whose resolver returns nothing gets no conversation memory (it is not shared with other users). `learn=llm` extracts durable facts from user messages only. The full surface (tiers, summaries, recall) is in the repo's `docs/agents/memory.md`; read it before using anything beyond the snippet.
+
+```python
+from dataclasses import dataclass
+
+from fastaiagent import Agent, Memory, RunContext
+from fastaiagent.testing import TestModel
+
+
+@dataclass
+class Session:
+    user_id: str
+
+
+llm = TestModel(response="noted")
+agent = Agent(name="assistant", llm=llm, memory=Memory(user_id=lambda ctx: ctx.state.user_id))
+ctx = RunContext(state=Session(user_id="ana"))
+agent.run("My name is Ana", context=ctx)
+agent.run("What is my name?", context=ctx)
+assert "My name is Ana" in [m.content for m in llm.calls[1]["messages"]]
+```
+
+## Multimodal input (brief)
+
+- `run`/`arun`/`astream` accept a string, an `Image`, a `PDF`, or a list mixing them: `agent.run(["What is in this?", Image.from_file("cat.jpg")])`. `stream()` accepts only `str`.
+- Build parts with `Image.from_file(path)` / `from_url(url)` / `from_bytes(data, media_type)`, `PDF.from_file` / `from_url` / `from_bytes`, `File.from_url` / `from_bytes`. `Image.from_bytes` needs the media type as its second argument.
+- The model must support the modality. `LLMClient(pdf_mode=, max_pdf_pages=, max_image_size_mb=)` tune PDF/image handling.
+
+## Pitfalls
+
+- `@tool` returns a `FunctionTool`, not the function: `get_weather("x")` raises `TypeError`. Call `.execute({...})` or keep a separate plain function.
+- A tool that raises does not crash the run: the model receives `Error: Tool '<name>' failed: ...` and continues. Assert on `result.tool_calls`, not only on exceptions.
+- `result.output` is only the last turn's text.
+
+---
+
+# Guardrails
+
+Read this when you add input/output/tool checks to an agent, write a custom check, or need to know what blocks, what warns, and what a check that cannot run reports.
+
+## The model
+
+A guardrail is a check on a payload at one position. The SDK runs it locally, inside your process: a block always happens at the edge. A connected control plane can author and distribute rules, and the SDK enforces them next to your local `guardrails=[...]`; it never relies on the plane to stop a run.
+
+```signature
+fastaiagent.Guardrail(name, guardrail_type=, position=, config=, blocking=, description=, fn=, on_error=, origin=, action=, severity=, floor=)
+fastaiagent.Guardrail.execute(data)
+fastaiagent.Guardrail.aexecute(data)
+```
+
+- `position` (`GuardrailPosition`): `input` (before the model sees the user message), `output` (the reply), `tool_call` (before a tool runs; the payload is the JSON text `{"tool": name, "arguments": {...}}`), `tool_result` (the tool's output text). Strings work: `position="input"`; a misspelt value raises at construction.
+- `guardrail_type` (`GuardrailType`): `code` (default; your `fn=`), `llm_judge`, `regex`, `schema`, `classifier`, `content_safety`, `groundedness`, `topic`, `pii`, `secrets`. Import both enums from `fastaiagent.guardrail`.
+- `blocking=True` (default): runs inline, in order, and a failing check halts. `blocking=False`: observe-only, runs in parallel, never halts and never rewrites.
+- Attach with `Agent(..., guardrails=[...])`. A `Supervisor` takes its own `guardrails=` too (see `teams.md`).
+- `fn(text)` returns a `bool` or a `GuardrailResult(passed, score=, message=, metadata=)`. A dict payload is passed to `fn` as JSON text.
+- `execute` is sync. Inside async code use `await guardrail.aexecute(...)`.
+- A blocking failure raises `GuardrailBlockedError` out of `agent.run()`. Import it with `from fastaiagent import GuardrailBlockedError` (it has `.guardrail_name`, `.results` and `.trace_id`, the blocked run's trace, `None` when tracing is off). Code written for 1.103.0 or earlier imports it from `fastaiagent._internal.errors`, which still works.
+
+## Built-in factories
+
+All live in `fastaiagent.guardrail`; each returns a `Guardrail` (`responsible_ai` returns a list).
+
+```signature
+fastaiagent.guardrail.no_pii(position=, entities=, backend=)
+fastaiagent.guardrail.no_secrets(position=)
+fastaiagent.guardrail.no_prompt_injection(position=, mode=, llm=, on_error=)
+fastaiagent.guardrail.json_valid(position=)
+fastaiagent.guardrail.toxicity_check(position=, mode=, llm=, threshold=, on_error=)
+fastaiagent.guardrail.openai_moderation(position=, client=, model=, on_error=)
+fastaiagent.guardrail.banned_topics(topics, llm=, mode=, position=, on_error=)
+fastaiagent.guardrail.allowed_topics(topics, llm=, mode=, position=, on_error=)
+fastaiagent.guardrail.grounded(reference, llm=, threshold=, position=, on_error=)
+fastaiagent.guardrail.no_hallucination(reference, llm=, threshold=, position=, on_error=)
+fastaiagent.guardrail.cost_limit(max_usd, position=, on_error=)
+fastaiagent.guardrail.allowed_domains(domains, position=)
+fastaiagent.guardrail.responsible_ai(pii=, prompt_injection=, secrets=, toxicity=, moderation=, grounded_to=, banned=, allowed=, llm=, threshold=, on_error=)
+```
+
+| Factory | Default position | Needs a model/key? | Notes |
+|---|---|---|---|
+| `no_pii` | output | no | `entities` default `("email","phone","ssn","credit_card")`; credit cards Luhn-checked; `"ip"`, `"iban"` opt-in; `backend="presidio"` needs `pip install "fastaiagent[safety]"` |
+| `no_secrets` | output | no | private keys, AWS/GitHub/Slack/Google/OpenAI/Stripe tokens, JWTs, `api_key = "..."`; matches are masked in metadata |
+| `no_prompt_injection` | input | heuristic: no; `mode="llm"`/`"decisions"`: yes | `on_error` default `"allow"` |
+| `json_valid` | output | no | output must parse as JSON |
+| `toxicity_check` | output | keyword: no; `mode="llm"`/`"decisions"`: yes | blocks when score >= `threshold` (0.5); `on_error` default `"allow"` |
+| `openai_moderation` | output | yes: `OPENAI_API_KEY` + `openai` package | `on_error` default `"block"` |
+| `banned_topics` | output | `mode="keyword"`: no; `mode="llm"` (default): yes | `topics` = names, `{name, description}` pairs, or a name->description dict; `on_error` default `"allow"` |
+| `allowed_topics` | output | `mode="keyword"`: no; `mode="llm"` (default): yes | whitelist; `on_error` default `"block"` (a whitelist that cannot classify must not pass) |
+| `grounded` / `no_hallucination` (same function) | output | yes | `reference` is a string or a zero-arg callable evaluated at check time; no reference -> passes with "groundedness skipped"; `on_error` default `"block"`; threshold 0.7 |
+| `cost_limit` | output | no | blocks when run spend > `max_usd`; an unpriced model RAISES (so `on_error` decides, default `"block"`) |
+| `allowed_domains` | tool_call | no | host must equal or be a subdomain of an entry; `evilexample.com` does not match `example.com` |
+| `responsible_ai` | mixed | default bundle: no | list: injection (input) + PII + secrets (output) on by default; LLM-backed rails are opt-in; spread it: `guardrails=responsible_ai(...)` |
+
+`banned_topics` / `allowed_topics` in `mode="llm"` with no live-client `llm=` produce a `topic`-type rule; with `mode="keyword"` or a live `LLMClient` they stay a local `code` rule.
+
+`mode="keyword"` is a word match: it needs no model, and it passes any text that contains a listed word ("tell me a joke about my order" passes an order-topics whitelist). Use it for offline tests or a coarse first line, and tell the user so; use `mode="llm"` when the meaning matters. A blocked run raises `GuardrailBlockedError` to the caller; an application should catch it and answer the person, not crash.
+
+```python
+from fastaiagent import Agent, GuardrailBlockedError
+from fastaiagent.guardrail import banned_topics, json_valid, no_pii, no_secrets
+from fastaiagent.testing import TestModel
+
+assert no_pii().execute("call me on 123-45-6789").passed is False
+assert json_valid().execute('{"a": 1}').passed is True
+assert banned_topics(["politics"], mode="keyword").execute("let's discuss politics").passed is False
+assert no_secrets().execute('api_key = "sk-proj-abcdefghijklmnopqrst"').passed is False
+
+agent = Agent(name="bot", llm=TestModel(response="SSN is 123-45-6789"), guardrails=[no_pii()])
+try:
+    agent.run("hi")
+except GuardrailBlockedError as err:
+    assert err.guardrail_name == "no_pii"
+```
+
+A tool-call gate runs before the tool executes (the tool never runs on a block):
+
+```python
+from fastaiagent import Agent, FunctionTool, GuardrailBlockedError
+from fastaiagent.guardrail import allowed_domains
+from fastaiagent.testing import FunctionModel
+
+fetched = []
+def fetch(url: str) -> str:
+    fetched.append(url)
+    return "page"
+
+calls = {"n": 0}
+def model(messages):
+    calls["n"] += 1
+    if calls["n"] == 1:
+        return "", [{"name": "fetch", "arguments": {"url": "https://evil.com/x"}}]
+    return "done"
+
+agent = Agent(name="web", llm=FunctionModel(model),
+              tools=[FunctionTool(name="fetch", fn=fetch, description="Fetch a URL")],
+              guardrails=[allowed_domains(["api.mycompany.com"])])
+try:
+    agent.run("go")
+except GuardrailBlockedError:
+    assert fetched == []
+```
+
+## Config-driven types (survive serialization and distribution)
+
+`Guardrail(guardrail_type=..., config={...})`. These round-trip through `to_dict()`/`from_dict()` and are what a control plane distributes. A `code` rule's `fn=` cannot be serialized.
+
+| Type | Key `config` fields |
+|---|---|
+| `regex` | `pattern`, `should_match` (default False: a match fails), `case_insensitive`, `mask_token`, `timeout_seconds` (ReDoS bound; a timeout FAILS, it does not allow) |
+| `schema` | `schema` (or `json_schema`): a non-empty JSON Schema dict; validated with `jsonschema` (a core dependency) |
+| `classifier` | `categories` {name: [keywords]}, optional `blocked` list (absent = every detected category blocks) |
+| `pii` | `entities` list, `backend` (`regex` or `presidio`) |
+| `secrets` | none, by design |
+| `topic` | `topics`, `mode` (`deny` default, or `allow`), `backend` |
+| `content_safety` | `categories` (S1..S14), `threshold`, `thresholds` per category, `backend` |
+| `groundedness` | `context_key`, `answer_key`, `threshold` (0.7) |
+| `llm_judge` | `prompt` (or `backend: "decisions"` + `instructions` + `threshold`), `pass_value` (`PASS`), `llm` |
+
+`config["llm"]` takes shareable `LLMClient` kwargs only; an `api_key` there raises at construction. Model-backed judges need a key in the environment (`# needs: OPENAI_API_KEY` or the provider you configured).
+
+## on_error, action, severity
+
+Three independent axes: `blocking` (does it run inline and halt?), `on_error` (what does a check that COULD NOT RUN mean?), `action` (what does a genuine failure cost?).
+
+- `on_error="block"` (default on `Guardrail`): a check that errors fails closed. `"allow"`: fails open. An errored result has `errored=True` either way, so a degraded pass is distinguishable: `passed=True, errored=True` is NOT a genuine pass. Check `result.errored`, not just `result.passed`.
+- `action` is one of `block` (default), `warn`, `mask`, `override`, `reask`. An unknown value becomes `block`.
+  - `warn`: record and continue. `mask`: replace the offending spans with `config["mask_token"]` (default `[REDACTED]`) and continue; only `regex`, `classifier`, `pii`, `secrets` can mask, and a mask with nothing to redact BLOCKS. `override`: replace the payload with `config["override_message"]` and continue. `reask`: re-prompt the model with the failure, up to `AgentConfig.guardrail_retries` (default 1); exhausting it blocks; at any position other than output, or when streaming, it blocks.
+  - An errored check always blocks regardless of `action`. A rewrite the run cannot apply (a streamed reply, multimodal input) blocks instead of passing the payload through.
+- Branch on `result.action_taken` (`none|blocked|warned|masked|overridden|reask`), never on the configured `result.action`. `result.modified_data` holds the rewrite.
+- `severity` (`low|medium|high|critical`) and `floor` are carried and traced; nothing in local enforcement depends on them (`floor` is plane governance).
+- Every run's guardrail firings are on `AgentResult.guardrails` (a `GuardrailFiring` has `name`, `position`, `action_taken`, `effect`, `passed`, `errored`). Use `firing.fired()` to find rules that did anything. `warn`/`mask` are only visible there.
+
+```python
+from fastaiagent import Agent, Guardrail
+from fastaiagent.guardrail import GuardrailPosition, GuardrailType
+from fastaiagent.testing import TestModel
+
+redact = Guardrail(
+    name="redact-ssn",
+    guardrail_type=GuardrailType.regex,
+    position=GuardrailPosition.output,
+    config={"pattern": r"\b\d{3}-\d{2}-\d{4}\b", "mask_token": "[SSN]"},
+    action="mask",
+)
+agent = Agent(name="bot", llm=TestModel(response="SSN is 123-45-6789"), guardrails=[redact])
+result = agent.run("hi")
+assert result.output == "SSN is [SSN]"
+assert [(g.name, g.action_taken) for g in result.guardrails] == [("redact-ssn", "masked")]
+```
+
+## A check that cannot check must say so
+
+> A guardrail whose configuration cannot check anything reports that it could not run (`errored=True`, decided by `on_error`) — never a clean pass.
+
+Do NOT write a rule that returns `passed=True` when it has nothing to inspect — because a green rule over an unchecked payload reads as a healthy control. The runners already enforce this for config-driven types: an empty schema, `pii` with `entities: []` or an unknown entity, `regex` with no/empty/uncompilable pattern, `classifier` with no categories, `topic` with no topics or a mistyped `mode`, `content_safety` with only unknown categories, `groundedness` with no context, and `code` with no `fn` (for example after `from_dict`) all report `errored=True` and block under the default `on_error`.
+
+```python
+from fastaiagent import Guardrail
+from fastaiagent.guardrail import GuardrailType
+
+rule = Guardrail(name="empty-pii", guardrail_type=GuardrailType.pii,
+                 config={"entities": []}, on_error="block")
+result = rule.execute("my ssn is 123-45-6789")
+assert result.errored and not result.passed
+
+fail_open = Guardrail(name="empty-pii", guardrail_type=GuardrailType.pii,
+                      config={"entities": []}, on_error="allow")
+result = fail_open.execute("my ssn is 123-45-6789")
+assert result.errored and result.passed  # a degraded pass, not a verdict
+```
+
+- When you add a new distributable type or a new config switch, add an unusable-config case to `tests/test_guardrail_unusable_config_sweep.py`; that sweep fails if a distributable type has none (`secrets` and `llm_judge` are exempt).
+- Parameterised builtins (`cost_limit`, `allowed_domains`, `grounded`) and your own `fn=` do NOT survive `from_dict`: they come back with no callable and raise at execution rather than pass. Zero-argument builtins (`no_pii`, `no_secrets`, `json_valid`, `toxicity_check`, `no_prompt_injection`, `openai_moderation`) come back armed.
+
+## guardrail_context
+
+An output guardrail sees only the answer. A `groundedness` rule scores that answer against the context it should have used, taken from a run-scoped slot (per task, via `ContextVar`):
+
+```python
+# needs: OPENAI_API_KEY
+import fastaiagent as fa
+from fastaiagent import Agent, Guardrail, LLMClient
+from fastaiagent.guardrail import GuardrailPosition, GuardrailType
+
+rule = Guardrail(
+    name="grounded-answer",
+    guardrail_type=GuardrailType.groundedness,
+    position=GuardrailPosition.output,
+    config={"context_key": "context", "threshold": 0.7},
+)
+agent = Agent(name="qa", llm=LLMClient(provider="openai", model="gpt-4o-mini"), guardrails=[rule])
+with fa.guardrail_context(context=["Refunds take 5 business days."]):
+    reply = agent.run("How long do refunds take?")
+```
+
+```signature
+fastaiagent.guardrail_context(**values)
+fastaiagent.set_guardrail_context(**values)
+fastaiagent.get_guardrail_context()
+fastaiagent.clear_guardrail_context(token)
+```
+
+Do wrap the run in `with fa.guardrail_context(...)`. Don't rely on it being set: a `groundedness` rule that finds no context raises (could-not-run), it does not pass. For a locally written rule `grounded(lambda: latest_docs)` is the callable equivalent.
+
+## Local versus control plane
+
+- The SDK executes: every type above runs in-process. A connected agent also turns plane-authored rules (`regex`, `schema`, `classifier`, `llm_judge`, `content_safety`, `groundedness`, `topic`, `pii`, `secrets`) into `Guardrail(origin="plane")` at all four positions; a plane `code` rule is skipped because its logic is not distributable.
+- Plane-authored rules are enforced alongside local ones. `floor` and draft/publish governance are plane concepts; locally `floor` is only displayed.
+
+### Plane-authored rules on a connected agent
+
+You do not fetch them or pass them in. `connect()` pulls the policy once, and every run adds the
+rules that apply to that agent to its own `guardrails=[...]`. What you write is the check that they
+arrived:
+
+```python
+# needs: a connected plane with at least one active guardrail rule
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, GuardrailBlockedError, LLMClient
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    agent.push()  # registers it now, so its id is known before you list its rules
+    plane_rules = fa.plane_guardrails_for_agent(agent.agent_id)
+    print([(g.name, g.position.value) for g in plane_rules])
+    try:
+        agent.run("an input one of those rules should block")
+    except GuardrailBlockedError as err:
+        print("blocked by", err.guardrail_name, "trace", err.trace_id)  # read this trace back
+finally:
+    fa.disconnect()
+```
+
+- **When they change.** The policy is not re-pulled by itself. A rule authored or edited after
+  `connect()` applies after `fa.refresh_policy()`; the next run rebuilds the list.
+- **Which ones apply.** A rule with no agents attached is domain-wide. A rule attached to agents
+  applies to those plane agent ids only. `plane_guardrails_for_agent` takes the id, or the name of
+  an agent this process has pushed. An agent gets its id when it registers, which a connected
+  agent does on its first run; that run waits for it (up to 5 s) when rules are attached to agents.
+  If registration takes longer, a warning says the attached rules were not applied to that run.
+  The plane identifies an agent by name, so a new agent that reuses an existing name in the
+  domain gets that agent's rules: pick a name that is not taken.
+- **An empty list is not a pass.** It means none apply, the rule was authored after `connect()`,
+  it is a `code` rule (skipped), or the policy pull failed. A failed pull is logged as a warning
+  and keeps the last policy, so read the log and say what you saw; do not say the rules are
+  enforced.
+- **Do not copy them into code.** Do not rebuild a plane rule locally or pass the result of
+  `plane_guardrails_for_agent` into `guardrails=[...]`. Plane rules are never pushed back with the
+  agent's definition.
+- **Testing.** Two tests, two different questions.
+  *How does my app behave when a plane rule blocks?* Offline, with
+  `fastaiagent.testing.plane_rules([...])` (1.105.0; `references/testing.md`): the rules go through
+  the same cache and builder as the real policy. Do not write to `_connection.policy_cache`, pass
+  a local guardrail (`no_pii()`, a regex) in their place, or add a `guardrails=` parameter to fake it.
+  *Does my platform's rule reach this agent and fire?* Only a connected test answers that: in
+  `tests/e2e/`, marked `e2e`, skipped when `FASTAIAGENT_TARGET` is not set. A passing
+  `plane_rules` test is not proof that the platform enforces anything.
+- **Evidence.** Each check is a guardrail span on the run's trace, which reaches the plane with the
+  trace. The plane's own guardrail views are read in the console, not through the SDK.
+- SDK-only: `action="reask"`, `guardrail_context`, `timeout_seconds` and the regex ReDoS bound, and `code` rules via `fn=`.
+- Traces: local capture is full fidelity. Guardrail span detail leaving the process is an allowlist per type; setting `FASTAIAGENT_TRACE_PAYLOADS=0` stops payload-bearing attributes from being exported.
+- Test offline with `TestModel` / `FunctionModel` (see `teams.md`); keep tests of model-backed judges in `tests/e2e/` marked `e2e`.
+
+---
+
+# Evals, scorers, pytest gates and the eval CLI
+
+Read this when you score an agent against a dataset, write a scorer or an LLM judge, add `@case` / `evaluate_one` tests, gate CI on quality, or run `fastaiagent eval`.
+
+## evaluate()
+
+```text
+from fastaiagent.eval import evaluate
+evaluate(agent_fn, dataset, scorers=None, concurrency=4, persist=True, run_name=None, dataset_name=None, agent_name=None, run_kind="evaluate", **kwargs)
+```
+
+```signature
+fastaiagent.eval.Dataset.from_jsonl(path)
+fastaiagent.eval.Dataset.from_csv(path)
+fastaiagent.eval.Dataset.from_list(items)
+fastaiagent.eval.Dataset.to_jsonl(path, append=)
+```
+
+- `agent_fn` is any callable taking the input and returning a string or an `AgentResult` (`agent.run` is the usual value). Sync callables run on a worker thread; async callables are awaited. `dataset` is a `Dataset`, a list of dicts, or a `.jsonl` / `.csv` path (anything else is read as JSONL).
+- Row keys: `input` (required), `expected_output` or `expected`, and the per-row scorer inputs `expected_trajectory`, `expected_tool_calls`, `expected_steps`, `context`, `contexts`. Other keys are ignored. Extra `**kwargs` to `evaluate()` go to every scorer for every row; a row's own value wins.
+- `scorers` defaults to `["exact_match"]`. Names are strings or `Scorer` instances. An unknown name, a name needing constructor arguments (`regex_match`), or two scorers with the same `name` raises `EvalError` before any agent call.
+- `persist=True` (default) writes the run to `./.fastaiagent/local.db`. Pass `persist=False` in tests and one-off scripts. The async twin is `from fastaiagent.eval.evaluate import aevaluate`.
+- An agent that raises or pauses (approval, `interrupt()`) makes the case **errored**: it is not scored and not counted as a quality failure. A scorer that raises is recorded as errored for that case; it does not abort the run.
+
+Every scorer verdict has an `outcome`: `passed`, `failed`, `errored` (could not run: judge outage, unparseable reply, scorer bug) or `skipped` (does not apply: no expected output, no trajectory). Rates exclude errored and skipped. Never read an errored check as a failure or as a pass.
+
+```python
+from fastaiagent import Agent
+from fastaiagent.eval import evaluate, gate
+from fastaiagent.testing import FunctionModel
+
+agent = Agent(name="capitals", llm=FunctionModel(
+    lambda msgs: "Paris" if "France" in str(msgs[-1].content) else "Rome"))
+
+cases = [
+    {"input": "Capital of France?", "expected_output": "Paris"},
+    {"input": "Capital of Italy?", "expected": "Rome"},
+    {"input": "Capital of Spain?", "expected_output": "Madrid"},
+]
+results = evaluate(agent.run, cases, scorers=["exact_match", "contains"], persist=False)
+print(results.summary())
+report = gate(results, fail_under=["exact_match=0.5"], max_error_rate=0.1)
+assert report.outcome == "passed", report.describe()
+assert gate(results, fail_under=["exact_match=0.9"]).outcome == "failed"
+```
+
+## Built-in scorers
+
+String names usable in `scorers=[...]` and `--scorers`:
+
+- Offline, no key: `exact_match`, `contains` (case-insensitive substring), `json_valid`, `length_between`, `latency`, `cost_under`, `pii_leakage`, `prompt_injection`, `bleu`, `rouge`, `levenshtein`.
+- Need an LLM (default `LLMClient()` unless you build the instance with `llm=`): `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`, `toxicity`, `bias`, `task_completion`, `hallucination`, `reflection_quality`. `moderation` calls the OpenAI moderation API.
+- `semantic_similarity` embeds with fastembed if installed, else OpenAI, else a crude `SimpleEmbedder` (silent fallback; scores then mean little).
+- Needs an argument, so instance only: `RegexMatch(pattern)`. Pass instances to set non-default options on the others, e.g. `LengthBetween(min_len=, max_len=)`, `Latency(max_ms=)`, `CostUnder(max_usd=)`, `Faithfulness(llm=, threshold=)`.
+- Instances only, not resolvable by name: `LLMJudge`, `GEval`, `DecisionJudge`, trajectory scorers (`ToolUsageAccuracy`, `StepEfficiency`, `PathCorrectness`, `CycleEfficiency`, `ToolCallCorrectness`) and session scorers (`ConversationCoherence`, `GoalCompletion`, `KnowledgeRetention`, `RoleAdherence`, `ConversationRelevancy`). All import from `fastaiagent.eval`.
+- Trajectory scorers read the agent's real tool calls from the `AgentResult` plus the row's `expected_trajectory`; with no expected value they are `skipped`, and with a plain-string agent output they are `errored`. `evaluate()` does not forward a row's `conversation`: pass it as an `evaluate(..., conversation=...)` keyword or call the session scorer's `.score(...)` yourself.
+- `latency` and `cost_under` use run facts `evaluate()` supplies. `cost_under` is **errored** (not passed) when the model has no known price, because unknown cost is not free cost.
+
+## Custom scorers
+
+```signature
+fastaiagent.eval.Scorer.code(name=)
+fastaiagent.eval.ScorerResult.error(reason, **details)
+fastaiagent.eval.ScorerResult.not_applicable(reason, **details)
+```
+
+`@Scorer.code("name")` turns a plain function into a scorer. The function gets keyword arguments `input`, `output`, `expected` (optional) and may declare any of the extra kwargs it wants (`latency_ms`, `cost`, `actual_trajectory`, `context`, ...); undeclared extras are dropped unless it takes `**kwargs`. Return a `bool` (passed), a `float` (score; passed when `>= 0.5`), a `ScorerResult`, or anything else (recorded as a failed verdict with `str(result)` as the reason). Use `ScorerResult.not_applicable(...)` when the row lacks what you need and `ScorerResult.error(...)` when the check could not run. Don't return a clean pass for a check that could not run.
+
+```python
+from fastaiagent.eval import Scorer, ScorerResult, evaluate
+
+@Scorer.code("is_short")
+def is_short(input, output, expected=None):
+    return len(output) < 20
+
+@Scorer.code("mentions_expected")
+def mentions_expected(input, output, expected=None, **kwargs):
+    if expected is None:
+        return ScorerResult.not_applicable("row has no expected output")
+    ok = expected.lower() in output.lower()
+    return ScorerResult(score=1.0 if ok else 0.0, passed=ok, reason=f"wanted {expected!r}")
+
+results = evaluate(
+    lambda text: "Paris",
+    [{"input": "Capital of France?", "expected": "Paris"}],
+    scorers=[is_short, mentions_expected],
+    persist=False,
+)
+assert results.cases[0].per_scorer["mentions_expected"]["passed"] is True
+```
+
+Subclass `Scorer` (set `name`, implement `score(self, input, output, expected=None, **kwargs) -> ScorerResult`) when the scorer needs state or constructor arguments.
+
+## LLM judge
+
+```signature
+fastaiagent.eval.LLMJudge(criteria=, prompt_template=, llm=, scale=, evaluation_steps=, rubric=, threshold=, name=, auto_steps=)
+fastaiagent.eval.GEval(name=, criteria=, evaluation_steps=, rubric=, scale=, threshold=, llm=, auto_steps=)
+```
+
+`LLMJudge(criteria="correctness", llm=...)` makes one call, normalises the verdict from `scale` (`"binary"` default, `"0-1"`, `"1-5"`, `"1-10"`) to 0-1, and passes when `score >= threshold` (default 0.5). Passing `evaluation_steps` or `rubric` (list of `(score, description)`) switches to G-Eval mode; `GEval` is that mode by default on a `1-5` scale. A custom `prompt_template` must contain `{input}`, `{output}` or `{expected}`, else the judge never sees the content (a `UserWarning`). Always pass `llm=` explicitly; with `llm=None` it builds a default `LLMClient()` that needs a provider key. An unparseable reply is retried once, then recorded as errored; a judge outage is errored too, so a gate on it is `invalid`, not `failed`. In offline tests use a `TestModel` that returns the JSON verdict:
+
+```python
+from fastaiagent.eval import LLMJudge
+from fastaiagent.testing import TestModel
+
+judge = LLMJudge(
+    criteria="helpfulness",
+    llm=TestModel(response='{"score": 1, "reasoning": "answers the question"}'),
+)
+verdict = judge.score(input="2+2?", output="4", expected="4")
+assert verdict.passed and verdict.outcome == "passed"
+
+bad = LLMJudge(llm=TestModel(response="no json here")).score(input="q", output="a")
+assert bad.outcome == "errored" and not bad.passed
+```
+
+## Gates
+
+```text
+from fastaiagent.eval import gate
+gate(results, *, fail_under=None, max_error_rate=None) -> GateReport
+```
+
+`gate()` returns a `GateReport` with `.outcome` (`"passed"`, `"failed"`, `"invalid"`), `.describe()` (reason lines), `.checks`, `.scored`, `.errored`, `.error_rate`. Threshold strings, all `metric=value`:
+
+- `overall.pass_rate=0.9`: share of applicable checks passed across all scorers.
+- `cases.pass_rate=0.8`: share of cases where every applicable check passed.
+- `<scorer>.avg_score=0.7` or `<scorer>.pass_rate=0.9`; a bare `<scorer>=0.9` means its pass rate.
+- `overall.avg_score` is not a metric: it raises `EvalError`.
+
+A run is `invalid` (not `failed`) when `max_error_rate` is exceeded, nothing was scored, a gated scorer errored on some cases and `max_error_rate` is unset or exceeded, or a gated named scorer applied to no case. `invalid` outranks `failed`. A threshold naming a scorer the run did not produce **fails**, so a typo never greens a build. Do set `max_error_rate` whenever any scorer is an LLM judge or the dataset can trigger approvals. Don't gate on one run when the agent is stochastic and the dataset is small: a single run can pass or fail on the model's luck.
+
+**The scorers and the pass bar are the user's decision, not yours.** Two assistants given the same
+dataset gated it on `contains` at 1.0 and on `contains` at 0.8 with `exact_match` ungated: the
+same agent, two different verdicts. Use the scorer and threshold the user named; else what the
+project already uses (an existing eval, `pytest` options, CI config); else ask. If you cannot ask,
+pick the strictest scorer that fits the expected answers (`exact_match` for exact strings,
+`contains` for a required phrase, an `LLMJudge` for free text), gate on every scorer you report,
+and say in your summary which scorers and thresholds you chose and that they were your choice.
+Never lower a threshold or drop a scorer to turn a failing gate green.
+
+**What an offline eval proves.** With `TestModel` or `FunctionModel` the agent's answers are
+scripted, so a gate over them proves the wiring (the dataset loads, the scorer runs, the gate
+fails when it should) and never the quality of the agent. A scripted model that echoes the tool's
+output scores 100% by construction. Say that in your summary, and keep the quality eval as a
+separate `e2e`-marked run against a real model (skipped without a key, and reported as skipped).
+
+## pytest plugin
+
+Installing `fastaiagent` plus `pytest` registers the plugin automatically (entry point `pytest11`); tests that do not use it are unaffected. `pytest` itself is not a fastaiagent dependency. Not xdist-aware: run eval-gated suites in one process.
+
+```python
+from fastaiagent import Agent
+from fastaiagent.eval import case, pytest_dataset
+from fastaiagent.testing import FunctionModel
+
+agent = Agent(name="capitals", llm=FunctionModel(
+    lambda msgs: "Paris" if "France" in str(msgs[-1].content) else "Rome"))
+
+@case(input="Capital of France?", expected="Paris")
+def test_france(evaluate_one):
+    evaluate_one(agent.run, scorers=["exact_match", "contains"])
+
+@pytest_dataset("cases.jsonl")          # one pytest test per row; file read at import time
+def test_rows(eval_case, evaluate_one):  # eval_case is the row dict
+    evaluate_one(agent.run, scorers=["exact_match"])
+```
+
+```signature
+fastaiagent.eval.case(input, expected=, name=)
+fastaiagent.eval.pytest_dataset(path, ids_from=)
+```
+
+`evaluate_one(agent_fn, *, input=None, expected=None, scorers=None, assert_pass=True, case_name=None, persist=True)` is a fixture returning a callable. Input and expected resolve from explicit args, then `@case`, then the dataset row. It returns the `EvalCaseRecord` (`.actual_output`, `.per_scorer`, `.trace_id`). Rules:
+
+- Pass a **sync** callable (`agent.run`). `agent.arun` is not awaited: its coroutine is stringified and the case just fails.
+- The test fails on a failed case, and also on an errored case (scorer could not run, none applied, agent raised or paused); the message says which. Pass `assert_pass=False` to inspect the record yourself.
+- `scorers=None` means `exact_match`. A case with no expected value then has no applicable check and is errored; pass `contains`, `json_valid` or an instance that does not need `expected`.
+- `case_name` and `@case(name=)` are accepted but have no effect (verified in source). `persist=False` keeps the case out of the stored run but it still counts for the gates.
+- Row keys `expected_trajectory`, `context`, ... and the agent's tool calls reach scorers as in `evaluate()`.
+
+All `evaluate_one` cases in a session aggregate into ONE stored run named `pytest::<rootdir name>`. Options (no option means no gating, but the run is still stored):
+
+| Option | Meaning |
+|---|---|
+| `--eval-fail-under METRIC=VALUE` | Threshold (grammar above). Repeatable. Malformed value is a usage error before any test runs. |
+| `--eval-max-error-rate RATE` | Max fraction of errored cases before the session verdict is `invalid`. |
+| `--eval-baseline RUN` | `run_id` or `run_name` of a stored run to compare with. |
+| `--eval-tolerance DELTA` | Allowed overall pass-rate drop vs the baseline (default `0.0`). |
+| `--eval-run-name NAME` | Name this session's stored run (default `pytest::<rootdir name>`). |
+
+A breached gate raises a passing session's exit status to 1 and prints `GATE: ...` lines and a last line `fastaiagent eval verdict: PASSED|FAILED|INVALID`. It never lowers a failing status. A name baseline skips stored runs whose verdict was `failed` or `invalid`, so a regression cannot become the next baseline. `--eval-run-name main --eval-baseline main` is a ratchet: the baseline is resolved before this session is stored, and the first run (no accepted `main` yet) publishes it, gated on thresholds only. A baseline that cannot be loaded makes the session `invalid`.
+
+Publish on the default branch, gate pull requests against it, and keep ONE database across both steps:
+
+```bash
+export FASTAIAGENT_LOCAL_DB=.ci/local.db      # same path in both jobs (cache it between runs)
+pytest tests/evals --eval-run-name main
+pytest tests/evals --eval-fail-under "overall.pass_rate=0.9" --eval-max-error-rate 0.1 \
+       --eval-baseline main --eval-tolerance 0.02
+```
+
+Don't isolate the DB per test with a monkeypatch fixture for these suites: the session run is stored after the patch is undone, so it lands in the default DB and baselines are never found.
+
+## CLI
+
+```bash
+fastaiagent eval run --agent app/agents.py:support --dataset cases.jsonl \
+  --scorers exact_match,contains --fail-under "overall.pass_rate=0.9" \
+  --max-error-rate 0.1 --run-name pr --json report.json
+fastaiagent eval compare main pr --tolerance 0.02
+```
+
+`eval run` options: `--dataset` and `--agent` (both required; `path/file.py:attr` or `pkg.module:attr`, an `Agent` or a callable), `--scorers` (comma-separated built-in names, default `exact_match`; no instances, so no `regex_match`, no `LLMJudge`), `--concurrency` (4), `--run-name`, `--fail-under` (repeatable), `--max-error-rate`, `--json PATH` (report with `scorecard` and `gate`), `--no-persist`, `--db`. `eval compare BASELINE CURRENT` takes run ids or names (latest wins); `--tolerance`, `--fail-on-regression/--no-fail-on-regression`, `--db`. Also `eval curate` (turn captured traces into a dataset) and `eval export --dry-run` (print what a connected run would send).
+
+| `eval run` exit | Meaning |
+|---|---|
+| `0` | Gate passed (also when no `--fail-under` and something was scored) |
+| `1` | Quality gate failed (including a misspelled scorer in `--fail-under`) |
+| `2` | Usage error from the CLI: missing option, malformed `--agent` spec, or the module has no such attribute |
+| `3` | Run invalid: error rate over `--max-error-rate`, nothing scored, gated scorer could not run, unknown or argument-needing scorer name, `overall.avg_score`, dataset file missing, agent module fails to import |
+
+`eval compare` exits `1` on a pass-rate drop beyond `--tolerance` and `3` when a run is not found.
+
+## With a platform
+
+Evals always run in your process, with your model keys. A connected plane can supply datasets and
+judge configurations and receives the verdicts.
+
+| What | How |
+|---|---|
+| Pull a dataset | `Dataset.from_platform(name)`, then pass it to `evaluate` |
+| Push a dataset | `Dataset([...]).publish(name)` |
+| Pull a judge | `Scorer.from_platform(name)` returns an `LLMJudge` (criteria, prompt template, scale); it runs locally. An unknown name raises `PlatformNotFoundError`. |
+| Send a verdict | A **gated** run only (below) |
+| Run an eval the plane asks for | `fastaiagent runner` executes the plane's `eval_run` jobs in your process (`platform.md`); for an agent built in Agent Studio, `fastaiagent studio eval` (the `fastaiagent-studio` skill) |
+
+**A run is sent only once its gate verdict is recorded.** `evaluate()` followed by `gate()` sends
+nothing: the run waits in `local.db`. The `fastaiagent eval run` CLI and the pytest plugin record
+the verdict for you. In Python, record it yourself:
+
+```python
+# needs: a connected plane; the API key needs the eval:execute scope
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, Dataset, LLMClient
+from fastaiagent.eval import evaluate, gate, record_gate_result
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    results = evaluate(agent.run, Dataset.from_platform("support-regression"), scorers=["contains"])
+    report = gate(results, fail_under=["contains.pass_rate=0.9"], max_error_rate=0.1)
+    record_gate_result(
+        results.run_id, gate_outcome=report.outcome, thresholds={"contains.pass_rate": 0.9}
+    )
+    print(report.outcome, results.run_id)
+finally:
+    fa.disconnect()  # also sends the queued verdict
+```
+
+- **Only real runs are sent.** The plane counts a recorded verdict as evidence about the agent, and
+  a run that `TestModel` or `FunctionModel` answered or judged scores what you scripted. The SDK
+  keeps such a run local: `evaluate()` and the pytest plugin mark it (`scripted_models` in the run's
+  local metadata), it is never queued, and `record_gate_result()` logs a warning when connected. Do
+  not work around that. With no model key, stop and say the eval could not run; a scripted run
+  is not a substitute.
+- Only metadata leaves: aggregates, the verdict, thresholds, git provenance and per-case scorer
+  verdicts with their `trace_id`. Inputs and outputs never do; the plane joins them from traces.
+- The key needs the `eval:execute` scope, which is not a default. Without it (or without the
+  domain's `connected_state_plane` entitlement) the plane answers 403, the SDK warns once and the
+  run stays queued. `connect(export_evals=False)` or `FASTAIAGENT_EXPORT_EVALS=0` keeps every run
+  local, and the plane cannot override that.
+- The CLI and pytest plugin do not call `connect()`. Their verdicts are sent only when something in
+  the same process connected (for example the agent module or `conftest.py`). Otherwise they wait
+  in `local.db` and go with the next connected gated run.
+- Check before claiming: after `disconnect()`, `fastaiagent eval export --status` shows how many runs
+  are still waiting. A run leaves that count only when the plane has confirmed it, so 0 means it
+  arrived. `--dry-run` prints the exact payload and names runs that have no verdict yet. The plane's
+  API has no read for these runs (`/public/v1/evals/runs/{id}` serves only runs the plane ran
+  itself), so point the user to the console to see them.
+- `EvalResults.publish(run_name)` is an older call that posts scores without a verdict. Use the
+  gated path above for evidence the plane counts.
+
+---
+
+# Platform connection, prompts, tracing, push, runner, CLI
+
+Read this when the task connects the SDK to a FastAIAgent control plane, loads versioned prompts, inspects or exports traces, registers agents, runs a runner, or uses the `fastaiagent` CLI.
+
+Everything works offline without `connect()`: traces go to local SQLite, prompts to the local registry. `connect()` adds platform backends beside the local ones.
+
+## The address rule
+
+NEVER invent, guess or hard-code a platform address. Take it from the user, from `FASTAIAGENT_TARGET`, or from `~/.fastaiagent/credentials.toml`. Do not use `app.fastaiagent.net` — that host is dead and was the default before 1.100.0. Each account has its own address, shown in the console when an API key is created. If you do not have it, ask the user; do not fill a placeholder that looks real.
+
+## connect / disconnect
+
+```signature
+fastaiagent.connect(api_key, target=, project=, governance_fail_mode=, auto_register=, console_url=, export_traces=, export_evals=, export_checkpoints=, export_experiments=)
+fastaiagent.disconnect()
+fastaiagent.push(agent, force=)
+fastaiagent.refresh_policy()
+```
+
+```python
+# needs: a FastAIAgent API key and program address from the user
+import os
+
+import fastaiagent as fa
+
+fa.connect(
+    api_key=os.environ["FASTAIAGENT_API_KEY"],
+    target=os.environ["FASTAIAGENT_TARGET"],
+    project="my-project",  # optional
+)
+# ... run agents; traces are exported in the background ...
+fa.disconnect()  # flushes pending spans first
+```
+
+- Where the calls go: `connect()` once at startup of the entry point that runs the agents, `disconnect()` in a `finally` at exit (a no-op when never connected). A helper that nothing calls sends no traces; a short script that exits without `disconnect()` can lose the last ones. After a connected run, read the trace back (`GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header) before saying it reached the platform. `SKILL.md` has a complete `main.py`.
+- `target` is REQUIRED since 1.100.0: the argument, else `FASTAIAGENT_TARGET`, else `ValueError` ("No target. Pass target= or set FASTAIAGENT_TARGET ..."). Don't call `fa.connect(api_key=...)` alone — it raises instead of reaching a default host. A failed resolve leaves the previous connection untouched.
+- `target` needs an explicit `http://` or `https://` scheme; `"localhost:7842"` raises `ValueError` (message mentions the scheme). A trailing `/` is stripped.
+- `api_key` has no default and Python `connect()` does NOT read `FASTAIAGENT_API_KEY`. Read the env var yourself and pass it, as above. Only the CLI reads that variable.
+- Invalid key (HTTP 401) or forbidden (403) raises `PlatformAuthError`. An unreachable plane does NOT raise: the connection is stored, a warning is logged, and traces buffer locally until the plane answers. So `connect()` returning proves nothing about reachability.
+- An answer that is not 200/401/403 (e.g. wrong host) logs a warning; the key is unverified.
+- `auto_register=True` (default): agents that exist at connect time register with the plane, later agents register on their first run (`run`, `arun`, `stream`, `astream`). Best-effort, never fails a run. Use `auto_register=False` to opt out and register with `agent.push()`.
+- `export_traces=False`: connect for policy, prompts, scorers and governance without registering a span exporter (for a runtime that owns its own OTel exporter).
+- `governance_fail_mode="closed"` (or `FASTAIAGENT_GOVERNANCE_FAIL_MODE=closed`): a governed agent refuses tool calls when the policy cannot be confirmed. Default `"open"`. Any other value logs a warning and stays open.
+- `fa.is_connected` is a lazy module attribute (bool), not a function.
+- `fa.refresh_policy()` re-pulls the plane policy (returns its version, or `None` when not connected).
+
+## What a connected agent gets from the plane, and what it sends
+
+The plane authors, stores and monitors; the SDK runs everything in your process. Nothing below
+lets the plane stop a run from outside it.
+
+| From the plane | How | Notes |
+|---|---|---|
+| Guardrail rules | Pulled with the policy at `connect()`; applied on every run with no code | Not re-pulled by itself: a rule authored after `connect()` applies after `fa.refresh_policy()`. Details in `guardrails.md`. |
+| Approval policies (governance) | Same policy pull | Gate governed tool calls; see `governance_fail_mode` above. |
+| Prompts | `PromptRegistry().get(slug)` | See Prompts below. |
+| Eval datasets | `Dataset.from_platform(name)` | `Dataset.publish(name)` sends one up. |
+| LLM-judge scorers | `Scorer.from_platform(name)` | Returns an `LLMJudge`. Unknown name: `PlatformNotFoundError`. |
+| Knowledge-base search | `PlatformKB(kb_id, name=, description=)` | Retrieval runs on the plane; the key needs `kb:read`. |
+| Curated memory facts | `PlaneFactBlock` in `fastaiagent.agent.memory_blocks` | Read-only, approved facts. |
+
+| To the plane | When | Notes |
+|---|---|---|
+| Traces, including guardrail spans | In the background while connected | `disconnect()` flushes; `export_traces=False` turns it off. |
+| Agent definitions | Auto-registered on the first run, or `agent.push()` | Local guardrails only; plane rules are never echoed back. |
+| Eval verdicts | Only gated runs (see `evals.md`) | Metadata only, never inputs or outputs. The key needs `eval:execute`. |
+| Datasets, prompts | `Dataset.publish(name)`, `PromptRegistry().publish(...)` | Explicit calls only. |
+
+SDK only, never from the plane: `code` guardrails (`fn=`), `action="reask"`, `guardrail_context`,
+`timeout_seconds`. Authoring guardrails, scorers and datasets happens in the console or the plane's
+API, not in the SDK.
+
+```signature
+fastaiagent.plane_guardrails_for_agent(agent_id)
+fastaiagent.Dataset.from_platform(name)
+fastaiagent.Dataset.publish(name)
+fastaiagent.Scorer.from_platform(name)
+fastaiagent.PlatformKB(kb_id, name=, description=)
+```
+
+## Connected-agent checklist
+
+Run through this before you say a connected app works. Each step names what proves it.
+
+1. **Key and address from the environment.** `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`; never
+   in code, never printed.
+2. **`connect()` in the entry point, `disconnect()` in a `finally`** (`SKILL.md` has the
+   `main.py`). `connect()` returning does not prove the plane answered: an unreachable plane only
+   logs a warning. A 401 or 403 raises `PlatformAuthError`.
+3. **Plane guardrails reached this agent.** Print
+   `[g.name for g in fa.plane_guardrails_for_agent(agent.agent_id or agent.name)]`. An empty list
+   means one of: none authored; authored after `connect()` (call `fa.refresh_policy()`); scoped to
+   another agent; a `code` rule (skipped); or the policy pull failed, which `connect()` and
+   `refresh_policy()` log as a warning. Do not report "guardrails are enforced" from an empty list.
+4. **Rules scoped to one agent.** Rules attached to agents, and approval policies on tools, are
+   matched by the plane's agent id. A connected agent registers on its first run, and that run
+   waits up to 5 s for its id when the policy needs it. A warning means it waited longer and
+   that run went without them. `agent.push()` after `connect()` registers it up front.
+5. **A rule actually fires.** Send one input it should catch and expect `GuardrailBlockedError`
+   (or the masked or warned output for `mask` and `warn`). Take that input from the rule (its
+   `config`, printed with its name) or ask the user for one; do not generate candidates by
+   searching the pattern. A test that proves it names that input. Then read the trace back.
+6. **Traces arrived.** `GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header
+   returns 200, after `disconnect()` has flushed. A finished run gives `result.trace_id`; a
+   blocked one raises, and its id is `err.trace_id` on the `GuardrailBlockedError`.
+7. **Eval verdicts arrived.** Only gated runs against a real model are sent (`evals.md`, "With a
+   platform"); a run a scripted model answered stays local, by design. After
+   `disconnect()`, `fastaiagent eval export --status` showing 0 runs waiting means the plane
+   confirmed them; `--dry-run` shows what would leave and whether a run is exportable.
+8. **Say what you checked.** Name each step you ran and what it printed, and each one you could
+   not run (no plane, no rule authored, key without `eval:execute`).
+
+## Credentials resolution
+
+Python: arguments, then `FASTAIAGENT_TARGET` (target only). Nothing else is read.
+
+CLI (`fastaiagent push`, `fastaiagent auth status|env`): the helper `_load_saved_credentials` merges, with environment winning over the file:
+
+| Source | Fields |
+|---|---|
+| Env: `FASTAIAGENT_API_KEY`, `FASTAIAGENT_TARGET`, `FASTAIAGENT_PROJECT` | api key, target, project |
+| File `~/.fastaiagent/credentials.toml` (mode 0600, written by `fastaiagent connect`) | `api_key`, `target`, `project` |
+| `--api-key` / `--target` on `fastaiagent push` | override both |
+
+- `fastaiagent connect --api-key ... [--target ...] [--project ...]` calls `connect()`, then saves the file. `--api-key` prompts (hidden) when omitted; it does not read `FASTAIAGENT_API_KEY`. Exit code 1 when the plane is unreachable ("Saved, not verified") or answers a non-plane HTTP code (then nothing is saved).
+- `fastaiagent disconnect` deletes the file. `fastaiagent auth status` shows source and masked key; `eval "$(fastaiagent auth env)"` exports the saved values as env vars.
+- Other optional env vars: `FASTAIAGENT_CONSOLE_URL` (console origin for deep links, when it differs from the target), `FASTAIAGENT_GOVERNANCE_FAIL_MODE`.
+
+## Prompts
+
+```signature
+fastaiagent.PromptRegistry(store=, path=)
+fastaiagent.PromptRegistry.register(name, template, fragments=, metadata=, version=, project_id=, created_by=)
+fastaiagent.PromptRegistry.register_fragment(name, content)
+fastaiagent.PromptRegistry.get(slug, version=, source=)
+fastaiagent.PromptRegistry.load(name, version=, alias=, resolve_fragments=)
+fastaiagent.PromptRegistry.set_alias(name, version, alias)
+fastaiagent.PromptRegistry.publish(slug, content, variables=)
+fastaiagent.Prompt.format(**kwargs)
+fastaiagent.Prompt.trace_attributes()
+```
+
+```python
+from fastaiagent import PromptRegistry
+
+reg = PromptRegistry(path="/tmp/fa_platform_ref_prompts.db")
+reg.register_fragment(name="tone", content="Be professional.")
+reg.register(name="greeting", template="Hello {{name}}. {{@tone}}")
+reg.set_alias("greeting", 1, "production")
+
+prompt = reg.get("greeting")  # local registry when not connected
+print(prompt.format(name="World"))
+print(reg.load("greeting", alias="production").version)
+```
+
+- Placeholders are `{{var}}`; fragments are `{{@fragment}}`. `Prompt.format(**kwargs)` is plain string replacement: a missing variable is left in the output as `{{var}}` with NO error — check `prompt.variables` yourself.
+- `get(slug, version=None, source="auto")`: `"auto"` uses the platform when connected, else local; `"platform"` raises `PromptNotFoundError` if absent; `"local"` never touches the network. A platform fetch that fails for another reason silently falls back to the local registry under `"auto"`. Platform results are cached 5 minutes per `(slug, version)`; `reg.refresh(slug)` drops the cache.
+- `load()` is local only and takes `alias=` (e.g. `"production"`). `get()` has no alias argument.
+- Versions are immutable. `register()` without `version=` adds the next version; re-registering an existing `version=` with a different template raises `ValueError`.
+- `publish(slug, content)` pushes to the platform and raises `PlatformNotConnectedError` when not connected.
+- Pass the `Prompt` object itself as `Agent(system_prompt=prompt)` (not `prompt.format()`, which drops the lineage) and the run stamps `fastaiagent.prompt.*` attributes on its LLM span. Around a foreign framework call, use `fa.trace_context("name", **prompt.trace_attributes())`.
+- The registry lives in the local DB (see Tracing); `PromptRegistry(path=...)` points it elsewhere.
+
+## Tracing
+
+Tracing is automatic: every `Agent`/`Chain` run writes spans to local SQLite (`.fastaiagent/local.db`, override with `FASTAIAGENT_LOCAL_DB`). `result.trace_id` identifies the run. Local capture is always full fidelity; filtering happens only on the way out.
+
+```signature
+fastaiagent.trace_context(name, **attributes)
+fastaiagent.TraceStore(db_path=)
+fastaiagent.TraceStore.list_traces(last_hours=, limit=, name_filter=, agent_name=, exclude_sources=)
+fastaiagent.TraceStore.get_trace(trace_id)
+fastaiagent.trace.add_exporter(exporter)
+fastaiagent.enable_otel_capture(framework=)
+fastaiagent.disable_otel_capture()
+```
+
+```python
+import os
+import tempfile
+
+os.environ["FASTAIAGENT_LOCAL_DB"] = os.path.join(tempfile.mkdtemp(), "local.db")
+
+from fastaiagent import Agent, TraceStore, trace_context
+from fastaiagent.testing import TestModel
+
+agent = Agent(name="demo", system_prompt="Be brief.", llm=TestModel(response="hi"))
+
+with trace_context("my-operation", **{"custom.key": "value"}) as span:
+    span.set_attribute("step", "start")
+    result = agent.run("hello")
+
+store = TraceStore()
+print(result.trace_id, len(store.list_traces(last_hours=1)))
+```
+
+- `trace_context` is a context manager yielding an OTel span; nested use nests spans. It needs no connection.
+- `list_traces(last_hours=24, limit=100)` defaults hide older traces: pass `last_hours=None` for all time. An unknown keyword only warns (`UserWarning`) and is ignored.
+- Tracing is on by default; there is nothing to turn on. Do not set `FASTAIAGENT_TRACE_ENABLED=1` in code or docs.
+- `FASTAIAGENT_TRACE_ENABLED=0` is the master switch: no local capture and no export at all (Replay and the UI then have nothing).
+- `FASTAIAGENT_TRACE_PAYLOADS=0` keeps prompts, outputs and tool arguments local: they are stripped before spans reach the plane or any `add_exporter` target. It does not reduce what `local.db` holds. An unparseable value counts as off (fails closed).
+- `add_exporter(exporter)` adds any OTel `SpanExporter` (Jaeger, Datadog, ...); it is wrapped so payloads are filtered per the settings above.
+- `enable_otel_capture()` is the one opt-in call to capture and render spans from third-party OTel/OpenInference instrumentors (including other agent frameworks) in the local store and UI. Call it once at startup; idempotent. It does nothing if `FASTAIAGENT_TRACE_ENABLED` is off. `disable_otel_capture()` only stops normalisation; an attached processor stays attached.
+- Other egress switches (all default on, all fail closed when unparseable): `FASTAIAGENT_EXPORT_EVALS`, `FASTAIAGENT_EXPORT_CHECKPOINTS`. `FASTAIAGENT_EXPORT_EXPERIMENTS` defaults off (replay reruns and Playground calls stay local). `connect()` logs the resolved posture once at INFO.
+- Unsent spans buffer in `local.db` while the plane is unreachable and drain later. `fastaiagent traces prune` deletes only spans the plane already has.
+
+## Registering agents (`push`)
+
+```signature
+fastaiagent.Agent.push(force=)
+```
+
+```python
+# needs: a connected plane (fa.connect with a key and FASTAIAGENT_TARGET)
+import fastaiagent as fa
+from fastaiagent.testing import TestModel
+
+agent = fa.Agent(name="support", system_prompt="Help.", llm=TestModel(response="ok"))
+result = agent.push()          # same as fa.push(agent)
+print(result.agent_id, result.version, result.url)
+```
+
+- Requires an active `connect()` and the `agent:write` scope on the key; raises on platform errors (`PlatformNotConnectedError` when not connected). `force=True` is the default and always re-pushes.
+- The plane keys agents by name within a project: two live agents with the same name overwrite each other. Give them distinct names.
+- A Supervisor worker or Swarm member registers as the agent it was made from (since 1.99.0), without `handoff_to_*` tools.
+- Auto-registration (see connect) already does this on first run; use `push()` for deterministic CI/deploy registration.
+- CLI: `fastaiagent push --module my_app.agents [--dry-run]` imports the module and pushes every module-level `Agent`, `Supervisor` (lead and workers) and `Swarm` (members). `--dry-run` prints one JSON array of request bodies on stdout, notes on stderr, and contacts nothing. Exit 1 if no agents are found or any push fails.
+
+## Runner
+
+```bash
+fastaiagent runner --connect "$FASTAIAGENT_TARGET" --key "$FASTAIAGENT_API_KEY" \
+  [--labels k=v ...] [--max-concurrency 4] [--tools module:callable ...]
+```
+
+- A long-lived daemon that registers with the plane, heartbeats, pulls live jobs (`live_playground`, `eval_run`) and runs them in your process with your local tools and keys. Ctrl-C / SIGTERM drains in-flight jobs.
+- `--connect` and `--key` are both required. It calls `connect()` with the same key so job traces are exported; a bad key exits 1.
+- A non-loopback `--connect` must be `https://`; plain `http` exits 2 unless `FASTAIAGENT_RUNNER_ALLOW_INSECURE=1`. Loopback http is allowed.
+- `--tools module:callable` imports and calls the callable, which must register your local tools in `ToolRegistry`; only then does the runner advertise `tool_exec`. Without it, plane-dispatched tool calls are not accepted.
+- Each job runs in its own request-scoped `job_scope`, so concurrent jobs do not share a connection.
+
+## CLI commands
+
+Run `fastaiagent <command> --help` for flags. Entry point: `fastaiagent` (also `python -m fastaiagent.cli.main`).
+
+| Command | Purpose |
+|---|---|
+| `connect` / `disconnect` | Save / remove platform credentials; verify the key. |
+| `auth status` / `auth env` | Show saved credentials and their source / print `export` lines. |
+| `push --module M [--dry-run]` | Register agents defined in a module with the plane. |
+| `runner --connect --key` | Run a registered runner daemon that pulls live jobs. |
+| `version` | SDK version and which optional extras are installed. |
+| `migrate` | Copy legacy `traces.db`, `checkpoints.db`, `.prompts/` into `local.db`. |
+| `resume` | Resume a suspended execution. |
+| `list-pending` | List pending interrupts. |
+| `inspect` | Show checkpoint history for an execution. |
+| `setup-checkpointer` | Provision the durability backend (SQLite or Postgres). |
+| `export-trace --trace-id ID [-o FILE]` | Export one trace as a self-contained JSON file from local SQLite (default `trace.json`). |
+| `traces list` / `export` | List recent traces / export a trace. |
+| `traces prune` | Delete spans the plane already has, to reclaim space. |
+| `traces scrub-secrets` | Remove credentials from spans stored by an older SDK. |
+| `traces purge` | Delete trace data from `local.db`. |
+| `replay show` / `inspect` / `fork` | Show replay steps / inspect one step / fork a trace at a step, modify, rerun. |
+| `eval run` | Run an evaluation and gate on it (non-zero exit for CI; 3 = invalid run). |
+| `eval compare` | Compare two persisted eval runs, baseline first. |
+| `eval export` | Preview what Agent-CI evidence would leave the machine (`--dry-run`). |
+| `eval curate` | Build an eval dataset from captured agent traces. |
+| `prompts list` / `diff` | List prompts / diff two versions. |
+| `kb list` / `status` / `add` / `clear` / `delete` | Manage local knowledge bases. |
+| `mcp serve` | Expose an Agent or Chain as an MCP server over stdio (needs the `mcp` extra). |
+| `agent serve` | Serve an Agent or Chain as a FastAPI service (`/run`, `/run/stream`, `/resume`, `/cancel`). Set `FASTAIAGENT_SERVE_TOKEN` for any network-exposed deployment; default bind is `0.0.0.0`. |
+| `ui start` / `ui reset-password` | Start the local web UI (default `127.0.0.1:7842`) / reset its login. |
+| `learn` / `learn list` / `learn supersede` | Extract durable facts from past traces / list active facts / supersede one. |
+| `optimize --agent --dataset` | Eval-driven prompt optimisation loop for an agent. |
+
+Don't call `fastaiagent connect` from CI without `--target` or `FASTAIAGENT_TARGET` — it fails with the no-target error, exit 1.
+
+## Agent Studio from code or the command line (1.102.0)
+
+Not for writing agent code by hand. A platform at 0.20.0 or later can build an agent from a spec you
+design: `fastaiagent studio …` (`context`, `new`, `spec validate|push|get`, `show`, `try`, `eval`,
+`export`, …) and `fastaiagent.studio.StudioClient` (also `fa.studio`). The `fastaiagent-studio` skill
+teaches the loop, the spec and the errors; read that skill, not this paragraph, before you use it.
+`StudioError(code, message, status, details)` is a `PlatformError`; a platform without Studio raises
+`StudioError("studio_not_available")`.
+
+---
+
+# The `fastaiagent-studio` skill
+
+> Use only when the person wants a NEW agent built, or an agent Studio made changed, inside FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team in Studio", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, try it in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. Not for an agent whose code is in this project, and not for evaluating against a platform dataset, using platform guardrails or connecting an app to the platform: those are the fastaiagent-sdk skill.
+
+# Agent Studio, from the command line
+
+Agent Studio is the FastAIAgent platform's builder: it checks a design, renders real SDK code
+from it, tries the agent against sample data, scores eval cases and exports a project. From the
+command line **you are the planner**. Studio's own model is never called: you design the agent
+with your model and send the design as a **spec**. Studio checks it and does the rest.
+
+After the export the code is the person's. Studio assists; it is not where agents live.
+
+**Is this the right skill?** If the project already has `fastaiagent` code and the person did not
+say "Studio", it is not: evaluating that agent (including against a dataset on the platform),
+enforcing the platform's guardrails or connecting it to the platform is done in the code. Stop and
+use the fastaiagent-sdk skill. Do not ask for Agent Studio permissions for that work.
+
+## Before you start
+
+- A platform **0.20.0 or later** and an API key with `studio:read` and `studio:write` (the
+  console's "Agent Studio" key preset has both). Credentials come from `fastaiagent connect`,
+  or `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`. Never ask for a key in chat, never print
+  one, never write one into a file.
+- Every command takes `--json` and prints one JSON document on stdout; notes and errors go to
+  stderr. **Always pass `--json`** and read the document. Exit 0 means it happened; exit 1 means
+  it did not (a refusal, a spec with problems, an eval that failed).
+- `<draft>` is a draft's id or its name.
+
+## The loop
+
+Do the steps in order. Do not skip step 3.
+
+1. **`fastaiagent studio context --json`** — the project's LLM endpoints, knowledge bases, the
+   guardrail names and tool types a spec may use, and the limits. **No LLM endpoint: stop** and
+   tell the person to add one in the console; nothing can be made without it. Writes off
+   (`environment.studio_writes_allowed` is false): stop and say so.
+2. **Read what the person wants.** Read any requirements document yourself. Read any scan or image
+   yourself, and say plainly what you could not read.
+3. **Lay the design out for the person and wait for a yes.** Say: the shape (one agent, a
+   supervisor team, or a swarm), each worker and what it does, each tool and where its data comes
+   from, the guardrails, and the eval cases. There is no plan step in the API, so this is where
+   the person approves. Never push a spec they have not agreed to.
+4. **`studio new --name … --brief "…" --data orders.csv --data-text scan=scan.txt --endpoint <id>`**
+   — makes the draft and adds the sample data. Pass `--endpoint` when the project has more than
+   one. A PDF or Word file with a text layer can be uploaded as it is; **a scan, a photo or any
+   image is refused** (`no_text_layer`): read it yourself, write the text to a file, and pass it
+   with `--data-text name=file`. Add `--harness` only when the person wants the prompts and eval
+   cases wired to the platform.
+5. **Write the spec** (`references/spec.md`), then **`studio spec validate <draft> spec.json
+   --json`**. Fix every problem it lists, each names its place. **Read every warning out to the
+   person**: a warning does not stop a version, and the person may not want what it says.
+6. **`studio spec push <draft> spec.json --note "…" --wait --json`** — makes the next version.
+7. **Look, then try, then evaluate:** `studio show <draft> --json` (the blueprint), `studio show
+   <draft> --files`, `studio try <draft> "a real question" --json`, `studio eval <draft> --json`.
+   Report what happened as it happened: failed cases and their reasons, and cases that "need
+   review" because the word rules cannot score them.
+8. **To change anything:** `studio spec get <draft> --out spec.json`, edit it, `validate`, `push`.
+   A new version is made and the old one is kept. A spec is always sent whole, never a patch.
+   Results count for one version: a pass on v1 is not carried to v2, so evaluate again.
+9. **`studio export <draft> --out <repo folder>`** — unpacks the project. Run its tests (they run
+   offline). Tell the person how to run the agent with their own model key. After the export,
+   the code is theirs.
+
+## The rules
+
+- **Never push a spec the person has not agreed to.** The platform cannot know they agreed.
+- **Never print or store a key.**
+- **A refusal is an answer, not an obstacle.** When a command fails, read `error.code`,
+  `error.message` and `error.hint`, tell the person, and stop. Do not retry a refusal, and do not
+  look for another way round it (`environment_rule`, `insufficient_scope`, `no_llm_endpoint`,
+  `key_has_no_owner`). `references/errors.md` says what each code means.
+- **Stale: stop and ask.** If `studio status` says `steps.stale` is true, someone changed the
+  draft in the console after the current version was made. Ask the person before changing anything.
+- **A team is tried one worker at a time** (`studio try … --worker orders`). Its end-to-end eval
+  cases run only from the exported code.
+- **Guardrails are not applied in a sandbox trial.** They apply in the exported code. Never tell
+  the person a guardrail "passed" because a trial succeeded.
+- **Tools answer from sample data in a trial,** never from a live system (except a knowledge-base
+  tool, which searches its knowledge base). A passing trial does not prove a REST tool works.
+- **Do not invent commands.** There is no `studio plan`, `build`, `refine` or `reset`: planning
+  and building from a description, and starting over, are console-only. To start over, push a new
+  spec; it makes a new version.
+- **Do not ask a draft's model to design for you.** You design; Studio checks and renders.
+- Use `--json`, branch on `error.code`, and do not parse the human text.
+
+## Where to read
+
+| You are doing | Read |
+|---|---|
+| Writing the spec: every field, the tool types, guardrails, eval criteria, worked examples for a single agent, a supervisor team and a swarm | `references/spec.md` |
+| Running a command: its options, and the JSON it prints | `references/commands.md` |
+| A command failed | `references/errors.md` |
+
+To write the SDK code the exported project is built from, or to change it by hand afterwards, use
+the `fastaiagent-sdk` skill.
+
+---
+
+# Writing a spec
+
+A **spec** is the design of one agent, as one JSON object. Studio checks it, renders the SDK
+code from it (the spec is the only input to the renderer), and keeps every version. You send it
+whole each time (`studio spec push`); there is no partial update. Print the exact JSON Schema
+with `fastaiagent studio spec schema`; this page is what a schema cannot say.
+
+Validate before you push: `fastaiagent studio spec validate <draft> spec.json --json`. A
+**problem** stops a version; a **warning** does not. Both name their place in `where`.
+
+## The top level
+
+| Field | Rule |
+|---|---|
+| `spec_version` | `1` |
+| `name` | The agent's name in code: `^[a-z][a-z0-9_-]{2,63}$`. Not the draft's display name. |
+| `description` | 1 to 1,000 characters. |
+| `architecture` | `single`, `supervisor` or `swarm`. (`chain` is in the schema but is refused.) |
+| `system_prompt` | A single agent's prompt, or a supervisor's routing prompt. At least 40 characters. A swarm has none: its workers own theirs. |
+| `llm` | `{"endpoint_id": "<id>"}`, an LLM endpoint of the project (`studio context`). The generated code is written for that endpoint's provider and model. |
+| `tools` | A single agent's tools. For a team it must be empty: every tool belongs to a worker. |
+| `guardrails` | Safety checks on the whole agent (see below). |
+| `eval_cases` | **At least 3.** For a team these are the end-to-end cases. |
+| `config` | Optional: `max_iterations` (1 to 25, default 10), `temperature` (0 to 2), `max_tokens` (1 to 32000). |
+| `workers` | Teams only: **2 to 6**, names unique. |
+| `max_delegation_rounds` | Supervisor only, 1 to 8 (default 3). |
+| `entrypoint`, `handoffs`, `max_handoffs` | Swarm only. `max_handoffs` is 1 to 16 (default 8). |
+
+A team size a person fixed in the console binds a spec sent here: a different worker count is a
+problem that names the fixed size.
+
+## Tools
+
+Every tool has `name` (a lowercase Python identifier, **unique across the whole spec**),
+`description` (1 to 500 characters; the agent's model reads it), `parameters`, and optionally
+`fixture_ref` (the sample-data file that answers for it in a trial).
+
+`parameters` is flat. Each entry is an object, never a bare string:
+
+```json
+{ "order_id": { "type": "string", "description": "the order number" } }
+```
+
+`type` is `string`, `integer`, `number` or `boolean`. Parameter names are lowercase identifiers.
+
+| `type` | Extra fields | In the exported code | In a trial |
+|---|---|---|---|
+| `mock` | `fixture_ref` (required), `match_keys` (each must be one of `parameters`), `default_response` | A lookup over the bundled sample data | The same lookup, served by Studio |
+| `rest` | `url` (http or https), `method` (`GET` default, `POST`, `PUT`, `DELETE`), `auth` (`none`, `bearer_env`, `api_key_env`) | A `RESTTool`; the secret is read from the environment | Answered from `fixture_ref` if set |
+| `mcp` | `server_url`, `tool_name` | An `MCPTool` | Answered from `fixture_ref` if set |
+| `kb` | `kb_id` (a knowledge base from `studio context`) | A `PlatformKB` search; needs a draft made with `--harness` | With `kb_id`: a search of that knowledge base. With `fixture_ref`: sample data |
+| `function` | `returns` (`str`, `int`, `float`, `bool`) | A typed stub the developer finishes | Answered from `fixture_ref` if set |
+
+**No tool ever carries a secret.** With `auth: bearer_env` the exported code reads
+`TOOL_API_TOKEN`; with `api_key_env` it reads `TOOL_API_KEY`. Never put a key in a spec.
+
+**Sample data must be reachable.** If you uploaded data, at least one tool must read it, and a
+`mock` tool names it with `fixture_ref` and the sample file's name (`orders.csv` is `orders`). A
+`mock` tool matches rows on `match_keys` (for `order_id`, the row whose `order_id` equals what the
+agent passed) and answers `default_response` when no row matches.
+
+## Guardrails
+
+`{"factory": "<name>", "kwargs": {...}}`. An unknown name, a missing required argument or an
+extra one is a problem. `studio context` lists the names; these are the arguments:
+
+| Factory | Arguments | Notes |
+|---|---|---|
+| `no_pii` | none | |
+| `no_secrets` | none | |
+| `no_prompt_injection` | none | |
+| `responsible_ai` | none | |
+| `openai_moderation` | none | Calls OpenAI's moderation API. The exported agent needs the `openai` package and an OpenAI key, and **blocks every answer without them** |
+| `toxicity_check` | optional `threshold` | |
+| `cost_limit` | required `max_usd` | |
+| `allowed_domains` | required `domains` | |
+| `banned_topics` | required `topics` | |
+| `allowed_topics` | required `topics` | In a **swarm** it is generated to check the question, not the answer (warning `guardrail_checks_question`) |
+| `json_valid` | none | **Warns.** Blocks every answer that is not a JSON document; only for an agent told to answer in JSON |
+| `grounded` | required `reference`, optional `threshold` | **Warns.** Checks the answer against a fixed reference text, so answers built from tool results fail |
+| `no_hallucination` | required `reference`, optional `threshold` | **Warns.** Same as `grounded` |
+
+Guardrails are **not applied in a sandbox trial**: only in the exported code. A worker with its
+own non-empty `guardrails` replaces the team's for that worker; an empty list inherits them.
+
+## Eval cases
+
+```json
+{
+  "name": "found_1003",
+  "input": "What is the status of order 1003?",
+  "expected_output": "Order 1003 has shipped.",
+  "criteria": { "must_mention": ["1003", "shipped"], "must_not_mention": ["refund"] }
+}
+```
+
+`name` and `input` are required. `criteria` may hold `must_mention` (a list), `must_not_mention`
+(a list) and `behaviour` (a sentence).
+
+**Scoring is by word rules, not a judge.** Every `must_mention` value must appear; no
+`must_not_mention` value may; and a case that does not use those rules passes on a 60% word overlap
+with `expected_output`. A case with only a `behaviour` can be neither passed nor failed: it reads
+**needs review**, and a person reads the answer. A value too short to score (one character, say)
+is a warning (`eval_value_unusable`) and is ignored. Prefer specific words ("shipped", "1003") over
+common ones. Write at least one case that should be refused or answered "not found".
+
+## Workers
+
+```json
+{
+  "name": "orders",
+  "description": "Order status and delivery questions",
+  "system_prompt": "You answer order status questions. Use orders_lookup with the order id and answer briefly.",
+  "tools": [],
+  "guardrails": [],
+  "eval_cases": []
+}
+```
+
+`name` is a lowercase identifier, unique in the spec; `description` (1 to 500) is what a supervisor
+or a peer reads to choose; `system_prompt` is at least 40 characters. Optional: `llm_endpoint_id`
+(another endpoint of the project), `max_iterations`. A worker's own `eval_cases` are scored in a
+sandbox, one worker at a time; give each worker at least one, or `studio eval --worker` refuses
+that worker (`worker_has_no_cases`).
+
+## Swarms
+
+Peers hand control to each other. Name an `entrypoint` (the first worker; it defaults to the first
+listed) and list each allowed handoff as `{"from_worker", "to_worker", "when"}`. A worker cannot
+hand off to itself, and **every worker must be reachable from the entrypoint**; an unreachable one is
+a problem. A swarm has no `system_prompt`.
+
+## Warnings
+
+| Code | Meaning |
+|---|---|
+| `guardrail_blocks_output` | A guardrail that will block every answer this agent gives (`json_valid`, `grounded`, `no_hallucination`) |
+| `guardrail_checks_question` | In a swarm, `allowed_topics` is generated to check the question |
+| `eval_value_unusable` | An eval value too short to score reliably; it is ignored |
+| `eval_dataset_not_updated` | The draft has a linked eval dataset and the spec carries different cases; this version uses the spec's cases |
+
+Nothing is changed behind your back: the spec that is checked is the spec that is rendered.
+
+## Example: one agent
+
+Sample data: `orders.csv` with `order_id`, `status`, `total`.
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "order-status-bot",
+  "description": "Answers questions about customer orders from the uploaded orders data.",
+  "architecture": "single",
+  "system_prompt": "You answer order-status questions for customers. Use the orders_lookup tool with the order id. If the order is not found, say so plainly. Never reveal one customer's order to another. Answer in one or two sentences.",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "tools": [
+    {
+      "type": "mock",
+      "name": "orders_lookup",
+      "description": "Look up one order by its id",
+      "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+      "fixture_ref": "orders",
+      "match_keys": ["order_id"],
+      "default_response": "No order with that id."
+    }
+  ],
+  "guardrails": [{ "factory": "no_pii", "kwargs": {} }],
+  "eval_cases": [
+    { "name": "found_1003", "input": "What is the status of order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } },
+    { "name": "missing_9999", "input": "Where is order 9999?", "criteria": { "behaviour": "says plainly that no such order was found" } },
+    { "name": "delivered_1004", "input": "Has order 1004 arrived?", "criteria": { "must_mention": ["1004", "delivered"] } }
+  ]
+}
+```
+
+## Example: a supervisor team
+
+A supervisor routes each request to one worker and gives the answer. Every tool is a worker's.
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "support-triage-team",
+  "description": "Routes a support request to the orders or the billing specialist.",
+  "architecture": "supervisor",
+  "system_prompt": "You route each customer request to the right specialist, orders or billing, then give the customer their answer in one or two sentences.",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "max_delegation_rounds": 3,
+  "tools": [],
+  "guardrails": [],
+  "workers": [
+    {
+      "name": "orders",
+      "description": "Order status and delivery questions",
+      "system_prompt": "You answer order status questions. Use orders_lookup with the order id and answer briefly.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "orders_lookup",
+          "description": "Look up one order by its id",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "orders_1003", "input": "Where is order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } }
+      ]
+    },
+    {
+      "name": "billing",
+      "description": "What an order cost",
+      "system_prompt": "You answer questions about what an order cost. Use billing_lookup with the order id and answer briefly.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "billing_lookup",
+          "description": "Look up what one order cost",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "billing_1002", "input": "What did order 1002 cost?", "criteria": { "must_mention": ["89"] } }
+      ]
+    }
+  ],
+  "eval_cases": [
+    { "name": "end_to_end_status", "input": "Where is order 1003?" },
+    { "name": "end_to_end_cost", "input": "What did order 1002 cost?" },
+    { "name": "end_to_end_unknown", "input": "Where is order 9999?" }
+  ]
+}
+```
+
+## Example: a swarm
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "support-swarm",
+  "description": "Peers that hand a customer to whoever can help, starting with orders.",
+  "architecture": "swarm",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "entrypoint": "orders",
+  "max_handoffs": 6,
+  "tools": [],
+  "guardrails": [{ "factory": "no_pii", "kwargs": {} }],
+  "workers": [
+    {
+      "name": "orders",
+      "description": "Order status. Hands billing questions to billing.",
+      "system_prompt": "You answer order status questions with orders_lookup. If the customer asks what an order cost, hand off to billing.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "orders_lookup",
+          "description": "Look up one order by its id",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "orders_1003", "input": "Where is order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } }
+      ]
+    },
+    {
+      "name": "billing",
+      "description": "What an order cost. Hands status questions back to orders.",
+      "system_prompt": "You answer questions about what an order cost with billing_lookup. If the customer asks where an order is, hand off to orders.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "billing_lookup",
+          "description": "Look up what one order cost",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "billing_1002", "input": "What did order 1002 cost?", "criteria": { "must_mention": ["89"] } }
+      ]
+    }
+  ],
+  "handoffs": [
+    { "from_worker": "orders", "to_worker": "billing", "when": "the customer asks what an order cost" },
+    { "from_worker": "billing", "to_worker": "orders", "when": "the customer asks where an order is" }
+  ],
+  "eval_cases": [
+    { "name": "end_to_end_status", "input": "Where is order 1003?" },
+    { "name": "end_to_end_cost", "input": "What did order 1002 cost?" },
+    { "name": "end_to_end_unknown", "input": "Where is order 9999?" }
+  ]
+}
+```
+
+## Choosing a shape
+
+Start with a single agent. Use a supervisor when distinct specialists have distinct tools and one
+router should pick; use a swarm when the specialists hand the same conversation back and forth.
+Do not add workers to look thorough: each one is a prompt, tools and cases someone has to keep true.
+
+---
+
+# When a command fails
+
+A failed command exits 1. With `--json` stdout holds one document:
+
+```json
+{
+  "error": {
+    "code": "spec_invalid",
+    "message": "The spec has 1 problem; nothing was made.",
+    "hint": "…",
+    "status": 422,
+    "details": { "problems": [{ "where": "tools[0]", "message": "…" }] }
+  }
+}
+```
+
+Branch on `code`. `message` is the platform's own words (quote it to the person); `hint` is what to
+do; `status` is the HTTP status; `details` carries what the code needs (`problems`, `workers`,
+`dataset_id`). Without `--json` the same words go to stderr and stdout stays empty.
+
+**A refusal is an answer.** Say what was refused and why, and stop or change the request. Do not
+retry the same call, and do not look for a way around a rule.
+
+## Stop and tell the person
+
+| Code | Meaning | What to say or do |
+|---|---|---|
+| `insufficient_scope` | The key lacks `studio:read` or `studio:write` (`details.required_scope`) | Tell them which permission to add; the console's "Agent Studio" key preset has both |
+| `feature_not_available` | The plan does not include Agent Studio | Tell them |
+| `environment_rule` | Studio is off on this install (production or acceptance rules). Reads and `export` still work | Tell them. Do not retry |
+| `key_has_no_owner` | The person who made the key is no longer a member | Tell them to make a new key |
+| `no_llm_endpoint` | The project has no LLM endpoint, or the draft's was removed | Tell them to add one in the console; nothing can be made without it |
+| `auth_error` | No usable key (`invalid_api_key`, or on a multi-workspace server `customer_required`) | Tell them to connect (`fastaiagent connect`) or set `FASTAIAGENT_API_KEY` |
+| `studio_not_available` | This platform has no headless Agent Studio | It needs 0.20.0 or later |
+| `topology_promote_unsupported` | A team's eval cases cannot be promoted | Export instead |
+| `not_sdk_owned` | `promote` onto an agent the exported code did not register | Run the exported agent once with a key, so it registers, then promote |
+
+## Fix the request
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `spec_invalid` | The spec has problems (`details.problems`, each with `where`) | Fix every one and push again. `studio spec validate` first. Nothing was made |
+| `invalid_request` | The request itself is malformed (`details.problems`) | Fix the request |
+| `invalid_input` | The command was used wrongly, or a local file could not be read | Read the message (a missing file, a spec that is not JSON, a bad `--data-text`) |
+| `project_required` | The key is not tied to one project | Pass `--project-id` |
+| `name_taken` | A draft with that name exists (case ignored) | Choose another name, or use that draft |
+| `worker_required` | A team was tried without `--worker` (`details.workers`) | Name one |
+| `unknown_worker` | No worker by that name (`details.workers`; empty for a single agent) | Use a name from the list; for a single agent leave `--worker` out |
+| `worker_has_no_cases` | That worker has no eval cases of its own | Add cases to the spec |
+| `unknown_case` | No eval case by that name | Check the name with `studio eval` (no `--case`) |
+| `no_version` | The draft has no completed version | Push a spec first |
+| `not_found` | No such draft, version, fixture or trial in reach. A draft in another project reads as not found too | Check the id or name with `studio list` |
+| `ambiguous_draft` | More than one draft has that name | Use an id |
+| `unsupported_file` | Not `.csv`, `.json`, `.jsonl`, `.md`, `.txt`, `.pdf` or `.docx` | Convert it, or read it yourself and send the text with `--data-text` |
+| `no_text_layer` | A PDF or image with no readable text (a scan) | Read it yourself with your own model, write the text to a file, pass `--data-text name=file` |
+| `too_many_fixtures` | More than 20 sample-data files on one draft | Combine or drop some |
+| `dataset_already_linked` | An eval dataset is already linked (`details.dataset_id`) | Use the dataset import instead |
+| `no_linked_dataset` | Dataset import on a draft with no linked dataset | Link one first |
+
+## Wait, then continue
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `build_in_progress` | A version of this draft is still being made | Wait for it (`studio status`), then retry |
+| `no_active_sandbox` | The trial sandbox is not ready | `try` and `eval` already start it and retry; if you see this, run the command again once |
+| `rate_limited` | Over the key's limit (60 a minute by default) | The command already waits out a short `Retry-After`; if this reaches you, wait the time it names |
+| `wait_timeout` | A version, sandbox or trial did not finish in time | It may still be going: read `studio status`, then ask again |
+| `version_failed` | `spec push --wait` ended with the version failed (`message` says why) | Read the message; fix the spec and push again |
+| `connection_error` | The platform could not be reached (or answered with a server error) | Check the address (`FASTAIAGENT_TARGET`); try once more later |
+
+## Writing to the draft's files
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `export_would_overwrite` | A file the export would write already exists; nothing was written | Choose another `--out`, or pass `--force` if the person agrees to overwrite |
+| `unsafe_export` | The export holds a path outside the target folder; nothing was written | Do not use it; tell the person |
+
+---
+
+# The commands
+
+Every command takes `--json` (one JSON document on stdout), and these three, which are left out
+of the lines below:
+
+- `--api-key KEY` and `--target ADDRESS` override the saved credentials;
+- `--project-id ID` is only for a key that is not tied to one project.
+
+Exit 0 means it happened. Exit 1 means it did not; with `--json` stdout then holds an `error`
+document (`references/errors.md`). Exit 2 is a usage error (a missing argument, a bad option).
+`<draft>` is a draft's id or its name. JSON below is trimmed to the keys you will use; the plane
+may add more.
+
+## context
+
+```command
+fastaiagent studio context
+```
+
+What the project has. Read it first.
+
+```json
+{
+  "project": { "id": "7fe6…", "name": "Agent Studio", "domain_id": "18a5…" },
+  "environment": { "tier": "development", "studio_writes_allowed": true },
+  "llm_endpoints": [{ "id": "7d95…", "name": "OpenAI cheap", "provider": "openai", "model": "gpt-5.4-mini" }],
+  "knowledge_bases": [{ "id": "kb1…", "name": "Support KB" }],
+  "sdk": { "sdk_pin": "1.88.0", "renderer_version": 16, "dependency_range": "fastaiagent>=1.88.0,<2.0.0" },
+  "limits": { "max_fixtures_per_draft": 20, "max_workers": 6, "min_eval_cases": 3 },
+  "spec_version": 1,
+  "architectures": ["single", "supervisor", "swarm"],
+  "tool_types": ["rest", "mcp", "kb", "function", "mock"],
+  "eval_criteria_keys": ["must_mention", "must_not_mention", "behaviour"],
+  "guardrails": [{ "factory": "cost_limit", "required": ["max_usd"], "optional": [] }],
+  "guardrails_that_warn": { "json_valid": "blocks every answer that is not a JSON document" },
+  "guardrails_on_the_question_in_a_swarm": { "allowed_topics": "in a swarm it checks the question, not the answer" }
+}
+```
+
+The generated code targets `sdk.dependency_range`: that is the SDK the exported project asks for,
+which may be older than the one installed here.
+
+## list
+
+```command
+fastaiagent studio list [--status STATUS] [--query TEXT] [--limit N]
+```
+
+The project's drafts (`status` is `drafting`, `generating`, `ready`, `failed` or `exported`). A JSON
+array; each draft has `id`, `name`, `status`, `architecture`, `created_via`, `console_url` and
+`steps_summary` (`current` step, `stale`, `version`, `evals`).
+
+## new
+
+```command
+fastaiagent studio new --name NAME --brief TEXT [--data FILE]... [--data-text NAME=FILE]... [--harness] [--endpoint ID]
+```
+
+Makes the draft and adds the sample data, one file per request. `--brief` is what the person asked
+for (at least 10 characters). `--endpoint` is required when the project has more than one LLM
+endpoint. `--data-text name=file` is for text you read yourself (a scan, an image, an OCR result):
+`name` is the sample-data name a tool's `fixture_ref` will use. Exit 1 if any file was not added;
+the draft still exists and the JSON says which.
+
+```json
+{
+  "draft": { "id": "c6e2…", "name": "Order desk", "status": "drafting", "created_via": "api" },
+  "fixtures": [{ "id": "9bc8…", "name": "orders", "kind": "csv" }, { "id": "a1f0…", "name": "receipt", "kind": "doc" }]
+}
+```
+
+## status
+
+```command
+fastaiagent studio status <draft>
+```
+
+Where the draft is and what to do next. `steps.stale` true means someone changed it in the console:
+stop and ask. `steps.next.action` is one of `push_spec`, `wait`, `start_sandbox`, `trial`, `eval`,
+`export`, `none`.
+
+```json
+{
+  "id": "c6e2…", "name": "Order desk", "status": "ready", "architecture": "single",
+  "steps": {
+    "current": "try", "stale": false,
+    "steps": [{ "key": "build", "state": "done", "summary": "v2, made through the API" }],
+    "next": { "action": "trial", "reason": "Not tried yet", "hint": "fastaiagent studio try … \"<a question>\"" }
+  },
+  "versions": [{ "id": "79c9…", "version": 2, "generation_status": "completed", "note": "repeat the id" }],
+  "fixtures": [{ "id": "9bc8…", "name": "orders", "kind": "csv" }]
+}
+```
+
+## spec schema
+
+```command
+fastaiagent studio spec schema [--full]
+```
+
+Prints the spec's JSON Schema (always JSON). `--full` also prints the guardrail names, tool types
+and limits.
+
+## spec validate
+
+```command
+fastaiagent studio spec validate <draft> <file>
+```
+
+Checks a spec and makes nothing. `<file>` is a JSON file, or `-` for stdin. **Exit 0 only when
+there are no problems.** Warnings do not change the exit code: read them out.
+
+```json
+{
+  "ok": false,
+  "problems": [{ "where": "tools[0]", "message": "tool 'orders_lookup' references fixture 'nope' but uploaded fixtures are: ['orders']" }],
+  "warnings": [{ "where": "guardrails[0]", "code": "guardrail_blocks_output", "message": "json_valid blocks every answer that is not a JSON document" }]
+}
+```
+
+## spec push
+
+```command
+fastaiagent studio spec push <draft> <file> [--note TEXT] [--wait]
+```
+
+Makes the next version from a whole spec. Problems make nothing: exit 1 with `spec_invalid`.
+`--wait` waits until the version is made (a couple of seconds) and exits 1 if it failed
+(`version_failed`).
+
+```json
+{
+  "version_id": "2a83…", "version": 1, "warnings": [],
+  "generation": { "id": "2a83…", "version": 1, "generation_status": "completed", "created_via": "api" }
+}
+```
+
+Without `--wait` there is no `generation`; the version is still being made.
+
+## spec get
+
+```command
+fastaiagent studio spec get <draft> [--version N] [--out FILE]
+```
+
+The spec of a version (the current one by default), to edit and push again. Prints it, or writes
+it to `--out`. Always JSON.
+
+## show
+
+```command
+fastaiagent studio show <draft> [--version N] [--files] [--file PATH]
+```
+
+The design at a glance, or the generated code. `--files` lists the generated files; `--file
+agent.py` prints one.
+
+```json
+{
+  "version": { "id": "79c9…", "version": 2, "note": "repeat the id", "generation_status": "completed" },
+  "blueprint": {
+    "name": "order-status-bot", "architecture": "single", "description": "…",
+    "guardrails": ["no_pii"], "eval_cases": 3, "tools": ["orders_lookup (mock)"]
+  }
+}
+```
+
+A team's blueprint has `workers` (each with `name`, `tools`, `eval_cases`) instead of `tools`; a
+swarm also has `entrypoint` and `handoffs`.
+
+## diff
+
+```command
+fastaiagent studio diff <draft> A B
+```
+
+What changed from version A to version B (numbers).
+
+```json
+{
+  "from": 1, "to": 2,
+  "spec_changes": [{ "where": "system_prompt", "kind": "changed" }, { "where": "tools.escalate", "kind": "added" }],
+  "files": [{ "path": "agent.py", "kind": "changed" }]
+}
+```
+
+## try
+
+```command
+fastaiagent studio try <draft> QUESTION [--worker NAME] [--version N] [--wait | --no-wait]
+```
+
+Asks the agent one question in the sandbox, starting the sandbox first if needed. A team needs
+`--worker`. It waits for the answer by default (there is no command to read a trial later). Exit 1
+if the trial failed. A guardrail is not applied.
+
+```json
+{
+  "id": "7652…", "kind": "chat", "worker": "orders", "status": "completed",
+  "output": "Order 1003 is shipped.",
+  "mock_calls": [{ "tool": "orders_lookup", "args": { "order_id": "1003" }, "matched": true }],
+  "trace_id": "0008…", "trace_url": "https://<console>/next/traces/0008…"
+}
+```
+
+Use `output` for the answer. `matched` says whether a sample-data row (or a knowledge-base passage)
+came back for that call; a false one is worth reporting.
+
+## eval
+
+```command
+fastaiagent studio eval <draft> [--worker NAME] [--case NAME] [--wait | --no-wait]
+```
+
+Runs the eval cases in the sandbox. A single agent is one run; a team with `--worker` runs that
+worker's cases; a team without it runs every worker that has cases. The team's own end-to-end
+cases run only from the exported code. **Exit 0 only when no case failed**; a case that "needs
+review" is not a failure.
+
+```json
+{
+  "runs": [{ "id": "93a7…", "kind": "eval_preview", "status": "completed" }],
+  "rollup": {
+    "version": 2,
+    "totals": { "passed": 2, "failed": 0, "needs_review": 1, "not_run": 0, "runnable_here": 3, "on_export_only": 0 },
+    "groups": [{
+      "scope": "agent",
+      "cases": [
+        { "name": "found_1003", "status": "passed", "output": "Order 1003 is shipped.", "detail": "all mentions present" },
+        { "name": "missing_9999", "status": "needs_review", "criteria": { "behaviour": "says plainly that no such order was found" } }
+      ]
+    }]
+  }
+}
+```
+
+A case's `status` is `passed`, `failed`, `needs_review`, `not_run` or `on_export`. A group's `scope`
+is a worker's name, `agent` (a single agent) or `end_to_end` (a team's own cases). Results are
+for one version.
+
+## export
+
+```command
+fastaiagent studio export <draft> [--out DIR] [--version N] [--force]
+```
+
+Unpacks the project (code, tests, eval cases, sample data) into `DIR` (default: the current
+folder), under one folder named after the draft. It writes **nothing** if any file already exists,
+unless `--force`. Needs only `studio:read`. After it, the code is the person's.
+
+```json
+{ "out": "/work/repo", "folders": ["order-desk"], "files": ["order-desk/agent.py", "order-desk/tests/test_agent.py"] }
+```
+
+## promote
+
+```command
+fastaiagent studio promote <draft> --agent ID
+```
+
+Turns the eval cases into a real eval suite on an agent the exported code has already registered
+(run it once with a key). A team's cases cannot be promoted. Optional, after the export.
+
+```json
+{ "suite_id": "s1…", "dataset_id": "ds1…", "cases": 3 }
+```
+
+## open
+
+```command
+fastaiagent studio open <draft>
+```
+
+Prints the draft's console address. It does not open a browser.
+
+```json
+{ "id": "c6e2…", "name": "Order desk", "console_url": "https://<console>/next/studio/c6e2…" }
+```
+
+## delete
+
+```command
+fastaiagent studio delete <draft> [--yes]
+```
+
+Deletes a draft and its versions. It cannot be undone. It asks only at a terminal; `--yes` skips
+that. Delete only what you made, and only when the person asks.
+
+```json
+{ "deleted": "c6e2…", "name": "Order desk" }
+```

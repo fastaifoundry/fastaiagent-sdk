@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="Four replies, one response: OpenAI's choices and finish_reason, Anthropic's content blocks and stop_reason with input_tokens, Gemini's candidates with finishReason STOP and usageMetadata, and Groq's OpenAI shape with extra timing fields all parse into one LLMResponse with finish_reason stop or tool_calls, tool-call arguments as a dict, and normalized usage keys.">
+  <title>Four replies, one response: OpenAI's choices and finish_reason, Anthropic's content blocks and stop_reason with input_tokens, Gemini's candidates with finishReason STOP and usageMetadata, and Groq's OpenAI shape with extra timing fields all parse into one LLMResponse with finish_reason stop or tool_calls, tool-call arguments as a dict, and normalized usage keys.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Four replies, one response</text>
+  <rect x="48" y="120" width="330" height="127.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">openai</text>
+  <text x="62" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">choices[0].message.tool_calls</text>
+  <text x="62" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  arguments: a JSON *string*</text>
+  <text x="62" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">finish_reason: 'tool_calls'</text>
+  <text x="62" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">usage.prompt_tokens + 2 detail dicts</text>
+  <polyline points="378,180 780,300" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <rect x="400" y="120" width="330" height="127.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="414" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">anthropic</text>
+  <text x="414" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">content: [{type: tool_use, input: {…}}]</text>
+  <text x="414" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">stop_reason: 'tool_use' | 'end_turn'</text>
+  <text x="414" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">usage.input_tokens / output_tokens</text>
+  <text x="414" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">code fences stripped on a JSON ask</text>
+  <polyline points="730,180 780,300" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <rect x="48" y="300" width="330" height="127.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="332" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">gemini</text>
+  <text x="62" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">candidates[0].content.parts</text>
+  <text x="62" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  [{functionCall: {name, args}}]</text>
+  <text x="62" y="391.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">finishReason: 'STOP'</text>
+  <text x="62" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">usageMetadata.promptTokenCount</text>
+  <polyline points="378,360 780,300" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <rect x="400" y="300" width="330" height="127.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="414" y="332" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">groq (preset)</text>
+  <text x="414" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">OpenAI shape, plus</text>
+  <text x="414" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">queue_time · prompt_time ·</text>
+  <text x="414" y="391.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">completion_time · …</text>
+  <text x="414" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">(kept in usage, unnormalized)</text>
+  <polyline points="730,360 780,300" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <polyline points="780,300 820,300" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="820,300 806.0,293.0 806.0,307.0" fill="#1baf7a"/>
+  <rect x="820" y="160" width="332" height="322.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="834" y="192" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">LLMResponse</text>
+  <text x="834" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">finish_reason</text>
+  <text x="834" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  'stop' | 'tool_calls'</text>
+  <text x="834" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="834" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">tool_calls[0].name</text>
+  <text x="834" y="291.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  'get_weather'</text>
+  <text x="834" y="311.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">tool_calls[0].arguments</text>
+  <text x="834" y="331.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  {'city': 'Paris'}  dict</text>
+  <text x="834" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="834" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">usage</text>
+  <text x="834" y="391.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  prompt_tokens</text>
+  <text x="834" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  completion_tokens</text>
+  <text x="834" y="431.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  total_tokens</text>
+  <text x="834" y="451.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="834" y="471.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">content: None on a tool turn</text>
+  <text x="48" y="500" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">proof 2, live: openai · anthropic · gemini · groq all returned finish_reason='tool_calls',</text>
+  <text x="48" y="522" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">get_weather with {'city': 'Paris'} as a dict, content None, and the three usage keys.</text>
+  <circle cx="60" cy="570" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="563" x2="67" y2="577" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="577" x2="67" y2="563" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">parameters pass through unchanged: claude-sonnet-5-5 answered a temperature with</text>
+  <text x="78" y="598" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">400 '`temperature` is deprecated for this model' — the call fails, the SDK does not strip it</text>
+</svg>

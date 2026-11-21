@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="A durable run is one execution_id and a few kinds of row: the loop writes a checkpoint before each model call and before each tool runs, a pause writes an interrupted row and a pending row in one transaction, and the end writes a run_end marker; three context variables carry the execution id, the agent path and the checkpointer to every tool; resume reads the latest row's status and re-enters at its node_id.">
+  <title>A durable run is one execution_id and a few kinds of row: the loop writes a checkpoint before each model call and before each tool runs, a pause writes an interrupted row and a pending row in one transaction, and the end writes a run_end marker; three context variables carry the execution id, the agent path and the checkpointer to every tool; resume reads the latest row's status and re-enters at its node_id.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">A durable run is one id and a few kinds of row</text>
+  <rect x="48" y="130" width="230" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the model</text>
+  <text x="68" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">one call per turn</text>
+  <polyline points="278,175 330,175" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="330,175 316.0,168.0 316.0,182.0" fill="#52514e"/>
+  <rect x="330" y="130" width="230" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="350" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">a tool</text>
+  <text x="350" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">may pause, charge, crash</text>
+  <polyline points="445,220 445,250 163,250 163,220" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6 5"/>
+  <polygon points="163,220 156.0,234.0 170.0,234.0" fill="#52514e"/>
+  <rect x="214.77499999999998" y="253.65" width="178.45000000000002" height="17.55" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="304" y="266" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#52514e" text-anchor="middle">until the model answers</text>
+  <polyline points="163,220 163,300" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="163,300 170.0,286.0 156.0,286.0" fill="#2a78d6"/>
+  <rect x="170.2" y="278.6" width="119.60000000000001" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="230" y="290" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">before each call</text>
+  <polyline points="445,220 445,300" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="445,300 452.0,286.0 438.0,286.0" fill="#2a78d6"/>
+  <rect x="460.2" y="278.6" width="119.60000000000001" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="520" y="290" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">before each tool</text>
+  <path d="M48,316 L48,434 A270.0,16 0 0 0 588,434 L588,316" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="318.0" cy="316" rx="270.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="318" y="350" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="middle">checkpoints · pending_interrupts · idempotency_cache</text>
+  <text x="318" y="378" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">one execution_id per run · SQLite by default, Postgres for a fleet</text>
+  <text x="318" y="396" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">state_snapshot = the messages so far · node_input = the tool's args</text>
+  <rect x="640" y="130" width="512" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="654" y="162" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">the rows a run writes</text>
+  <text x="654" y="181.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">turn:N             llm_call    before the model</text>
+  <text x="654" y="201.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">turn:N/tool:X      tool_call   before the tool, args saved</text>
+  <text x="654" y="221.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">turn:N/tool:X      hitl_pause  interrupted + a pending row</text>
+  <text x="654" y="241.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">run_end            run_end     completed | failed — never on a pause</text>
+  <rect x="640" y="310" width="512" height="108.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="654" y="342" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">three context variables, set per run</text>
+  <text x="654" y="361.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">_execution_id   so a tool and @idempotent know the run</text>
+  <text x="654" y="381.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">_agent_path     agent:&lt;name&gt;/tool:&lt;t&gt; — nests in a Swarm</text>
+  <text x="654" y="401.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">_current_checkpointer   where @idempotent writes</text>
+  <text x="48" y="500" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">resume(execution_id) reads the newest row: its status says what to do, its node_id says where.</text>
+  <polyline points="50,548 57,556 71,539" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="554" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">Agent(checkpointer=…) opts in; Chain checkpoints by default; Swarm and Supervisor nest under one id</text>
+  <circle cx="60" cy="592" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="585" x2="67" y2="599" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="599" x2="67" y2="585" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="598" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">no checkpointer → nothing is written, and a tool's interrupt() raises instead of pausing</text>
+</svg>

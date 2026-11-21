@@ -1,0 +1,29 @@
+# FastAIAgent SDK
+
+> Python SDK to build, debug, evaluate and operate AI agents. Apache-2.0. Runs standalone; connects to a FastAIAgent platform optionally.
+
+Assistants: read the full reference first. It lists the mistakes assistants make with this SDK, then covers each area.
+
+## Read first
+
+- [Full reference for coding assistants](https://docs.fastaiagent.net/llms-full.txt): the ten rules, then agents, tools, teams, guardrails, evals, platform, testing, what changed
+- [Use fastaiagent with a coding assistant](https://docs.fastaiagent.net/getting-started/coding-assistants/): install the skills (`fastaiagent skills install`)
+- [Agent Studio from the command line](https://docs.fastaiagent.net/platform/agent-studio/): build an agent through Agent Studio with `fastaiagent studio` (the spec, the commands, the errors); also the last part of the full reference above
+
+## Documentation
+
+- [Getting started](https://docs.fastaiagent.net/getting-started/): Install, first agent, coding-assistant skills
+- [Agents](https://docs.fastaiagent.net/agents/): Agent, LLMClient, AgentConfig, middleware, memory, teams, swarm
+- [Tools](https://docs.fastaiagent.net/tools/): @tool, REST tools, MCP tools, replay_class
+- [Chains](https://docs.fastaiagent.net/chains/): Graph workflows: cycles, typed nodes, human approval
+- [Guardrails](https://docs.fastaiagent.net/guardrails/): Input, output and tool-call safety checks
+- [Evaluation](https://docs.fastaiagent.net/evaluation/): evaluate(), scorers, the pytest plugin, CI gates
+- [Testing without a model](https://docs.fastaiagent.net/testing/): TestModel and FunctionModel
+- [Tracing and replay](https://docs.fastaiagent.net/tracing/): Local traces, OpenTelemetry, replay
+- [Platform](https://docs.fastaiagent.net/platform/): connect(), prompts, push, the runner
+- [CLI](https://docs.fastaiagent.net/cli/): Every fastaiagent command
+
+## Source
+
+- [fastaiagent-sdk](https://github.com/fastaifoundry/fastaiagent-sdk)
+- [Agent Skills for coding assistants](https://github.com/fastaifoundry/fastaiagent-skills)

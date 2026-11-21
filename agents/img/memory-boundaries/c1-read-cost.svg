@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Median time to read one user's newest 50 facts with 50, 500 and 5,000 facts stored, on fastaiagent 1.82.0: SQLite about 0.6 ms, Postgres about 0.8 ms, Redis about 1.4 ms — flat while the stored facts grow a hundredfold.">
+  <title>Median time to read one user's newest 50 facts with 50, 500 and 5,000 facts stored, on fastaiagent 1.82.0: SQLite about 0.6 ms, Postgres about 0.8 ms, Redis about 1.4 ms — flat while the stored facts grow a hundredfold.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One turn's fact read stays flat as a user's facts grow</text>
+  <text x="48" y="98" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="400" fill="#52514e" text-anchor="start">median time to read the newest 50 facts · fastaiagent 1.82.0 · measured on one laptop</text>
+  <line x1="48" y1="140" x2="84" y2="140" stroke="#2a78d6" stroke-width="3"/>
+  <circle cx="66" cy="140" r="5.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="94" y="147" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">SQLite</text>
+  <line x1="248" y1="140" x2="284" y2="140" stroke="#4a3aa7" stroke-width="3"/>
+  <circle cx="266" cy="140" r="5.5" fill="#4a3aa7" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="294" y="147" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">Postgres</text>
+  <line x1="448" y1="140" x2="484" y2="140" stroke="#1baf7a" stroke-width="3"/>
+  <circle cx="466" cy="140" r="5.5" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="494" y="147" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">Redis</text>
+  <line x1="130" y1="500.0" x2="930" y2="500.0" stroke="#8a8880" stroke-width="1.5"/>
+  <text x="116" y="506.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="end">0 ms</text>
+  <line x1="130" y1="422.5" x2="930" y2="422.5" stroke="#d6d4cc" stroke-width="1"/>
+  <text x="116" y="428.5" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="end">0.5 ms</text>
+  <line x1="130" y1="345.0" x2="930" y2="345.0" stroke="#d6d4cc" stroke-width="1"/>
+  <text x="116" y="351.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="end">1 ms</text>
+  <line x1="130" y1="267.5" x2="930" y2="267.5" stroke="#d6d4cc" stroke-width="1"/>
+  <text x="116" y="273.5" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="end">1.5 ms</text>
+  <line x1="130" y1="190.0" x2="930" y2="190.0" stroke="#d6d4cc" stroke-width="1"/>
+  <text x="116" y="196.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="end">2 ms</text>
+  <text x="200" y="530" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">50</text>
+  <text x="530.0" y="530" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">500</text>
+  <text x="860" y="530" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">5,000</text>
+  <text x="530.0" y="562" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">facts stored for the user</text>
+  <polyline points="200.0,406.7 530.0,405.4 860.0,406.1" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="200.0" cy="406.7" r="5.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="530.0" cy="405.4" r="5.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="860.0" cy="406.1" r="5.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="880" y="412.07" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">SQLite 0.6 ms</text>
+  <polyline points="200.0,348.9 530.0,376.5 860.0,376.5" fill="none" stroke="#4a3aa7" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="200.0" cy="348.9" r="5.5" fill="#4a3aa7" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="530.0" cy="376.5" r="5.5" fill="#4a3aa7" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="860.0" cy="376.5" r="5.5" fill="#4a3aa7" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="880" y="382.465" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Postgres 0.8 ms</text>
+  <polyline points="200.0,290.8 530.0,292.9 860.0,276.2" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="200.0" cy="290.8" r="5.5" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="530.0" cy="292.9" r="5.5" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+  <circle cx="860.0" cy="276.2" r="5.5" fill="#1baf7a" stroke="#fcfcfb" stroke-width="2"/>
+  <text x="880" y="282.18" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Redis 1.4 ms</text>
+  <text x="48" y="588" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">The read is the same call a turn makes: list_active(..., limit=50).</text>
+</svg>

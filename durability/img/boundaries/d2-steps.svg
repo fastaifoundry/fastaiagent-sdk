@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Between one step and the next: a small refund writes turn:0, turn:0/tool:refund, turn:1 and run_end completed; a large refund writes the same first two rows and then an interrupted hitl_pause row plus a pending_interrupts row in one transaction, and no run_end, because a pause is not an ending.">
+  <title>Between one step and the next: a small refund writes turn:0, turn:0/tool:refund, turn:1 and run_end completed; a large refund writes the same first two rows and then an interrupted hitl_pause row plus a pending_interrupts row in one transaction, and no run_end, because a pause is not an ending.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between one step and the next — what one run writes</text>
+  <rect x="48" y="120" width="540" height="135.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">a run that completes (proof 1)</text>
+  <text x="62" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#0 turn:0               llm_call    completed</text>
+  <text x="62" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#0 turn:0/tool:refund   tool_call   completed</text>
+  <text x="62" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#1 turn:1               llm_call    completed</text>
+  <text x="62" y="236.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#2 run_end              run_end     completed</text>
+  <rect x="612" y="120" width="540" height="135.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="626" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">a run that pauses (proof 1)</text>
+  <text x="626" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#0 turn:0               llm_call    completed</text>
+  <text x="626" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#0 turn:0/tool:refund   tool_call   completed</text>
+  <text x="626" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">#0 turn:0/tool:refund   hitl_pause  interrupted</text>
+  <text x="626" y="236.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">pending_interrupts: manager_approval {order, amount, balance}</text>
+  <polyline points="50,300 57,308 71,291" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="306" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a row is written before the step, not after: a crash inside the step still has a re-entry point</text>
+  <polyline points="50,340 57,348 71,331" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">the pause row and the pending row commit together: the approvals UI never sees a half-suspended run</text>
+  <circle cx="60" cy="384" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="377" x2="67" y2="391" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="391" x2="67" y2="377" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="390" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a paused run has no run_end: a marker after an interrupted row would hide the pause from resume</text>
+  <rect x="48" y="430" width="1104" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="466" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">what a row holds</text>
+  <text x="68" y="488" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">state_snapshot: every message so far, the turn, the tool name and call id</text>
+  <text x="68" y="507" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">node_input: the tool's arguments as dispatched · interrupt_context: the frozen snapshot</text>
+  <text x="68" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent_path: agent:refund-bot/tool:refund — who wrote it, for a Swarm or Supervisor</text>
+  <text x="48" y="590" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">The Local UI's checkpoint inspector shows these rows as a timeline with a state diff between any two.</text>
+</svg>

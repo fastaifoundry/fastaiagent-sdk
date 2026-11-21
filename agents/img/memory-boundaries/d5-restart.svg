@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="What survives a restart: windows and the auto recall index are lost; the fact store keeps every fact, and semantic search re-embeds what the new process hasn't indexed.">
+  <title>What survives a restart: windows and the auto recall index are lost; the fact store keeps every fact, and semantic search re-embeds what the new process hasn't indexed.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">What survives a restart — the store is the source of truth</text>
+  <rect x="48" y="130" width="460" height="290" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="72" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS A</text>
+  <rect x="72" y="192" width="412" height="50" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="86" y="223.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">window: 12 messages</text>
+  <rect x="72" y="260" width="412" height="50" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="86" y="291.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">recall="auto" index</text>
+  <rect x="72" y="328" width="412" height="50" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="86" y="359.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">semantic index: 5 facts</text>
+  <rect x="692" y="130" width="460" height="290" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="716" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS B · after a restart</text>
+  <rect x="716" y="192" width="412" height="50" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="730" y="223.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">window: empty</text>
+  <rect x="716" y="260" width="412" height="50" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="730" y="291.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">recall="auto" index: empty</text>
+  <rect x="716" y="328" width="412" height="50" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="730" y="359.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">semantic index: rebuilt from the store</text>
+  <polyline points="508,275 692,275" fill="none" stroke="#52514e" stroke-width="3" stroke-linejoin="round"/>
+  <polygon points="692,275 678.0,268.0 678.0,282.0" fill="#52514e"/>
+  <rect x="558.35" y="244.9" width="83.30000000000001" height="24.3" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="262" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="500" fill="#52514e" text-anchor="middle">restart</text>
+  <path d="M330,496 L330,584 A270.0,16 0 0 0 870,584 L870,496" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="600.0" cy="496" rx="270.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="600" y="548" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="middle">fact store — every fact, every process</text>
+  <polyline points="260,420 260,540 330,540" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="330,540 316.0,533.0 316.0,547.0" fill="#52514e"/>
+  <rect x="182.6" y="454.8" width="154.8" height="21.6" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="260" y="470" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="500" fill="#52514e" text-anchor="middle">persist · forget</text>
+  <polyline points="870,540 940,540 940,382" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="940,382 933.0,396.0 947.0,396.0" fill="#1baf7a"/>
+  <rect x="937.0" y="454.8" width="146.0" height="21.6" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="1010" y="470" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="500" fill="#52514e" text-anchor="middle">embeds facts it</text>
+  <rect x="923.8" y="476.8" width="172.4" height="21.6" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="1010" y="492" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="500" fill="#52514e" text-anchor="middle">hasn't indexed yet</text>
+  <text x="48" y="636" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Keep a window with save()/load(); keep recall with your own persistent VectorStore.</text>
+</svg>

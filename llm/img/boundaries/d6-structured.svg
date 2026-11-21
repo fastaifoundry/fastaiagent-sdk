@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Three layers of structured output: on the client, output_type sends a JSON schema natively or injects it into the system prompt and parses the reply into .parsed or None; the agent adds strict mode for OpenAI and Azure; and when a reply does not parse, the agent re-asks with the parse error written as prose, up to output_retries times.">
+  <title>Three layers of structured output: on the client, output_type sends a JSON schema natively or injects it into the system prompt and parses the reply into .parsed or None; the agent adds strict mode for OpenAI and Azure; and when a reply does not parse, the agent re-asks with the parse error written as prose, up to output_retries times.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Free text to a typed object — three layers</text>
+  <rect x="48" y="120" width="660" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">1 · LLMClient(output_type=City)</text>
+  <text x="68" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">json_schema sent natively, or appended to the system prompt (Anthropic, presets without it)</text>
+  <text x="68" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">code fences stripped · .parsed is the object, or None</text>
+  <polyline points="378,230 378,262" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="378,262 385.0,248.0 371.0,248.0" fill="#2a78d6"/>
+  <rect x="48" y="262" width="660" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="298" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">2 · Agent — strict mode</text>
+  <text x="68" y="320" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">OpenAI / Azure: strict: true, additionalProperties: false, every field required</text>
+  <polyline points="378,352 378,384" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="378,384 385.0,370.0 371.0,370.0" fill="#2a78d6"/>
+  <rect x="48" y="384" width="660" height="130" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="420" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">3 · Agent — self-correction</text>
+  <text x="68" y="442" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">"Your previous response could not be used: the response was not valid JSON (…).</text>
+  <text x="68" y="461" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">  Reply again with ONLY the JSON value that satisfies the required schema …"</text>
+  <text x="68" y="480" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">up to output_retries = 2 (0–5); tools are off for the re-ask</text>
+  <rect x="760" y="120" width="392" height="264.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="774" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">proof 5</text>
+  <text x="774" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">openai     '{"name":"Paris",…}'</text>
+  <text x="774" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">           → City(name='Paris', …)</text>
+  <text x="774" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="774" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">anthropic  '{"name": "Paris", …}'</text>
+  <text x="774" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">           (schema in the system prompt)</text>
+  <text x="774" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">           → City(name='Paris', …)</text>
+  <text x="774" y="291.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="774" y="311.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">FunctionModel, offline:</text>
+  <text x="774" y="331.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  call 1  'Paris, which is in France.'</text>
+  <text x="774" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  call 2  re-asked → valid JSON</text>
+  <text x="774" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">  result.parsed = City(…)</text>
+  <circle cx="60" cy="560" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="553" x2="67" y2="567" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="567" x2="67" y2="553" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="566" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a non-object type (list[str], int) is wrapped in an object on the wire and unwrapped on parse</text>
+</svg>
